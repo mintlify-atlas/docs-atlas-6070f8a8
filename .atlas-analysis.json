@@ -1,0 +1,121 @@
+{
+  "projectType": "general",
+  "projectName": "Nur Nix",
+  "projectDescription": "Extra packages, bundlers and libraries for Nix with automated caching",
+  "theme": "aspen",
+  "primaryColor": "#fcfcfc",
+  "lightColor": "#5375c4",
+  "darkColor": "#84c1ec",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "cache"
+            ]
+          },
+          {
+            "group": "Packages",
+            "pages": [
+              "packages/overview",
+              "packages/bobgen",
+              "packages/bumper",
+              "packages/catppuccin-zen-browser",
+              "packages/ffmpeg-quality-metrics",
+              "packages/flake-release",
+              "packages/go-over",
+              "packages/nix-fix-hash",
+              "packages/opengrep",
+              "packages/protoc-gen-connect-openapi",
+              "packages/pysentry",
+              "packages/qsvenc",
+              "packages/renovate",
+              "packages/shellhook"
+            ]
+          },
+          {
+            "group": "Bundlers",
+            "pages": [
+              "bundlers/overview",
+              "bundlers/deno",
+              "bundlers/docker",
+              "bundlers/go"
+            ]
+          },
+          {
+            "group": "Libraries",
+            "pages": [
+              "libs/overview",
+              "libs/mkFlake",
+              "libs/mkChecks",
+              "libs/mkApps",
+              "libs/go",
+              "libs/buf",
+              "libs/deno",
+              "libs/gleam",
+              "libs/rust"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Images",
+        "groups": [
+          {
+            "group": "Container Images",
+            "pages": [
+              "images/overview",
+              "images/ffmpeg",
+              "images/nix"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Curated collection of Nix packages with automatic updates",
+    "Cross-compilation bundlers for Deno, Go, and Docker",
+    "Utility libraries for flake development (mkFlake, mkChecks, mkApps)",
+    "Pre-built container images for FFmpeg and Nix",
+    "Automated binary caching for faster builds",
+    "Integration with Nix User Repository (NUR)",
+    "Development hooks and shell utilities"
+  ],
+  "publicApiSurface": [
+    "packages.bobgen",
+    "packages.bumper",
+    "packages.catppuccin-zen-browser",
+    "packages.ffmpeg-quality-metrics",
+    "packages.flake-release",
+    "packages.go-over",
+    "packages.nix-fix-hash",
+    "packages.opengrep",
+    "packages.protoc-gen-connect-openapi",
+    "packages.pysentry",
+    "packages.qsvenc",
+    "packages.renovate",
+    "packages.shellhook",
+    "bundlers.deno-{system}",
+    "bundlers.docker",
+    "bundlers.docker-stream",
+    "bundlers.go-{system}",
+    "bundlers.go-compress-{system}",
+    "libs.mkFlake",
+    "libs.mkChecks",
+    "libs.mkApps",
+    "libs.go.compile",
+    "libs.buf.fetchDeps",
+    "libs.buf.configHook",
+    "overlays.packages",
+    "overlays.libs",
+    "nixosModules.overlay",
+    "images.ffmpeg",
+    "images.nix"
+  ]
+}
