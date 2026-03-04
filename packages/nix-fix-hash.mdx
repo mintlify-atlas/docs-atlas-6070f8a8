@@ -1,0 +1,136 @@
+---
+title: nix-fix-hash
+description: Nix hash fixer for automatic hash updates
+---
+
+[nix-fix-hash](https://github.com/spotdemo4/nix-fix-hash) automatically fixes hash mismatches in Nix expressions by parsing error messages and updating the hash values.
+
+## Installation
+
+### Run directly
+
+```bash
+nix run github:spotdemo4/nur#nix-fix-hash
+```
+
+### Add to flake
+
+```nix
+devShells.default = pkgs.mkShell {
+  packages = with pkgs.trev; [
+    nix-fix-hash
+  ];
+};
+```
+
+## Usage
+
+### Fix hash in a file
+
+When you get a hash mismatch error:
+
+```
+error: hash mismatch in fixed-output derivation
+  specified: sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+     got:    sha256-abc123...
+```
+
+Run nix-fix-hash:
+
+```bash
+nix build 2>&1 | nix-fix-hash
+```
+
+This will automatically update the hash in your Nix file.
+
+### Fix hash in specific file
+
+```bash
+nix build 2>&1 | nix-fix-hash --file package.nix
+```
+
+### Interactive mode
+
+Review changes before applying:
+
+```bash
+nix build 2>&1 | nix-fix-hash --interactive
+```
+
+## How it works
+
+<Steps>
+  <Step title="Parse error message">
+    nix-fix-hash reads the Nix build error and extracts the expected and actual hash values
+  </Step>
+  <Step title="Locate hash in source">
+    Finds the file and line containing the incorrect hash
+  </Step>
+  <Step title="Update hash">
+    Replaces the old hash with the correct one
+  </Step>
+  <Step title="Verify fix">
+    Optionally re-runs the build to confirm the fix worked
+  </Step>
+</Steps>
+
+## Common workflows
+
+### Update fetchFromGitHub hash
+
+When updating a package version:
+
+```nix
+fetchFromGitHub {
+  owner = "owner";
+  repo = "repo";
+  rev = "v2.0.0";  # Updated version
+  hash = "sha256-oldHash";  # Needs update
+}
+```
+
+Run:
+
+```bash
+nix build .#package 2>&1 | nix-fix-hash
+```
+
+### Batch update multiple packages
+
+```bash
+for pkg in package1 package2 package3; do
+  echo "Updating $pkg"
+  nix build .#$pkg 2>&1 | nix-fix-hash
+done
+```
+
+### CI/CD integration
+
+Automate hash updates in pull requests:
+
+```bash
+nix flake update
+nix build --no-link 2>&1 | nix-fix-hash
+git add .
+git commit -m "chore: update hashes"
+```
+
+## Supported hash formats
+
+nix-fix-hash supports all Nix hash formats:
+
+- SRI format: `sha256-abc123...`
+- Nix32 format: `sha256:abc123...`
+- Base64 format: `abc123...`
+
+<Tip>
+Use nix-fix-hash with `nix-update` to automate package updates completely. Update the version with nix-update, then fix hashes with nix-fix-hash.
+</Tip>
+
+<Note>
+nix-fix-hash only works with fixed-output derivations that produce hash mismatch errors. It cannot fix other types of build failures.
+</Note>
+
+## Links
+
+- [GitHub Repository](https://github.com/spotdemo4/nix-fix-hash)

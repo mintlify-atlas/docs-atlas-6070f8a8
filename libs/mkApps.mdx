@@ -1,0 +1,294 @@
+---
+title: mkApps
+description: Convert simple script definitions into flake apps
+---
+
+`mkApps` transforms declarative app configurations into proper flake app outputs, eliminating the boilerplate of creating script derivations.
+
+## Overview
+
+Define apps with just a script and dependencies:
+
+```nix
+# Before: Manual derivation
+apps.deploy = {
+  type = "app";
+  program = "${pkgs.writeScriptBin "deploy" ''
+    #!/usr/bin/env bash
+    kubectl apply -f ./k8s
+  ''}/bin/deploy";
+};
+
+# After: Using mkApps
+apps = lib.mkApps {
+  deploy = {
+    script = ''kubectl apply -f ./k8s'';
+    deps = [ pkgs.kubectl ];
+  };
+};
+```
+
+## Function Signature
+
+```nix
+mkApps :: AttrSet -> AttrSet
+```
+
+Takes an attribute set where each value is an app configuration, returns an attribute set of flake apps.
+
+## App Configuration
+
+Each app can have the following fields:
+
+<ParamField path="script" type="string" required>
+  Shell script to execute when the app runs. The shebang is added automatically.
+</ParamField>
+
+<ParamField path="deps" type="list">
+  List of packages to add to `PATH`. Alias: `runtimeInputs`.
+</ParamField>
+
+<ParamField path="description" type="string">
+  Description of what the app does. Also accepts `meta.description`.
+</ParamField>
+
+## Return Value
+
+Each app in the returned attribute set has the structure:
+
+```nix
+{
+  type = "app";
+  program = "/nix/store/...-<name>/bin/<name>";
+  meta.description = "...";
+}
+```
+
+## Examples
+
+### Simple Script App
+
+```nix
+apps = lib.mkApps {
+  hello = {
+    script = ''echo "Hello, Nix!"'';
+    description = "Print a greeting";
+  };
+};
+```
+
+Run with:
+
+```bash
+nix run .#hello
+# Output: Hello, Nix!
+```
+
+### App with Dependencies
+
+```nix
+apps = lib.mkApps {
+  deploy = {
+    script = ''
+      echo "Deploying to Kubernetes..."
+      kubectl apply -f ./k8s/
+      echo "Deployment complete!"
+    '';
+    deps = [ pkgs.kubectl ];
+    description = "Deploy application to Kubernetes";
+  };
+};
+```
+
+### Multiple Apps
+
+```nix
+apps = lib.mkApps {
+  dev = {
+    script = ''npm run dev'';
+    deps = [ pkgs.nodejs ];
+    description = "Start development server";
+  };
+
+  build = {
+    script = ''npm run build'';
+    deps = [ pkgs.nodejs ];
+    description = "Build for production";
+  };
+
+  test = {
+    script = ''pytest tests/'';
+    deps = [ pkgs.python3Packages.pytest ];
+    description = "Run test suite";
+  };
+
+  fmt = {
+    script = ''treefmt'';
+    deps = [ pkgs.treefmt ];
+    description = "Format all files";
+  };
+};
+```
+
+### Complex Deployment Script
+
+```nix
+apps = lib.mkApps {
+  release = {
+    script = ''
+      set -euo pipefail
+
+      VERSION=$(cat VERSION)
+      echo "Building release v$VERSION"
+
+      # Build for multiple platforms
+      nix build .#packages.x86_64-linux.default
+      nix build .#packages.aarch64-linux.default
+
+      # Create GitHub release
+      gh release create "v$VERSION" \
+        --title "Release v$VERSION" \
+        --generate-notes
+
+      echo "Release v$VERSION published!"
+    '';
+    deps = with pkgs; [
+      nix
+      gh
+      coreutils
+    ];
+    description = "Build and publish a new release";
+  };
+};
+```
+
+### App with Environment Setup
+
+```nix
+apps = lib.mkApps {
+  migrate = {
+    script = ''
+      export DATABASE_URL="postgresql://localhost/mydb"
+      export MIGRATION_DIR="./migrations"
+
+      echo "Running database migrations..."
+      dbmate up
+      echo "Migrations complete!"
+    '';
+    deps = [ pkgs.dbmate ];
+    description = "Run database migrations";
+  };
+};
+```
+
+### Using Runtime Inputs Alias
+
+```nix
+apps = lib.mkApps {
+  backup = {
+    script = ''
+      pg_dump mydb > "backup-$(date +%Y%m%d).sql"
+    '';
+    runtimeInputs = [ pkgs.postgresql ]; # Alias for deps
+    description = "Backup database";
+  };
+};
+```
+
+## Usage in Flakes
+
+Combine with `mkFlake` for multi-system apps:
+
+```nix flake.nix
+{
+  outputs = { self, nixpkgs, nur }:
+    nur.lib.mkFlake { } (system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+        lib = nur.lib.${system};
+      in
+      {
+        apps = lib.mkApps {
+          dev = {
+            script = ''npm run dev'';
+            deps = [ pkgs.nodejs ];
+          };
+
+          deploy = {
+            script = ''kubectl apply -f ./k8s'';
+            deps = [ pkgs.kubectl ];
+          };
+        };
+
+        # Optionally set a default app
+        apps.default = lib.mkApps {
+          start = {
+            script = ''npm start'';
+            deps = [ pkgs.nodejs ];
+          };
+        }.start;
+      }
+    );
+}
+```
+
+Run apps with:
+
+```bash
+# Run named app
+nix run .#dev
+
+# Run default app
+nix run
+```
+
+## Implementation Details
+
+### Generated Derivation
+
+Each app is converted to a `stdenvNoCC.mkDerivation` with:
+
+- **Configure phase**: Creates script with shebang and PATH setup
+- **Install phase**: Copies script to `$out/bin/<name>`
+- **No build phase**: Scripts don't need compilation
+- **No fixup**: Skipped for performance
+
+Example generated script:
+
+```bash
+#!/nix/store/.../bash
+export PATH="/nix/store/.../kubectl/bin:/nix/store/.../coreutils/bin:$PATH"
+kubectl apply -f ./k8s
+```
+
+### Source Location
+
+Implemented in: `libs/mkApps/default.nix:1`
+
+## Best Practices
+
+1. **Use `set -euo pipefail`**: Exit on errors for safer scripts
+2. **Add descriptions**: Helps users discover apps with `nix flake show`
+3. **Keep deps minimal**: Only include what the script needs
+4. **Test locally**: Run `nix run .#app` before committing
+
+## Advantages Over Alternatives
+
+| Feature | mkApps | writeScriptBin | Manual derivation |
+|---------|--------|----------------|-------------------|
+| Concise syntax | ✓ | ~ | ✗ |
+| Auto PATH setup | ✓ | ✗ | Manual |
+| Flake app structure | ✓ | ✗ | ✓ |
+| Dependencies | Declarative | Manual | Manual |
+| Boilerplate | Minimal | Some | Heavy |
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="mkChecks" icon="check" href="/libs/mkChecks">
+    Create flake checks with similar simplicity
+  </Card>
+  <Card title="mkFlake" icon="layer-group" href="/libs/mkFlake">
+    Combine with mkFlake for multi-system apps
+  </Card>
+</CardGroup>

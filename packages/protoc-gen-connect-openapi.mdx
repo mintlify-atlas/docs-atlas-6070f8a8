@@ -1,0 +1,180 @@
+---
+title: protoc-gen-connect-openapi
+description: Protobuf plugin for generating OpenAPI specs from Connect RPC
+---
+
+[protoc-gen-connect-openapi](https://github.com/sudorandom/protoc-gen-connect-openapi) is a Protobuf compiler plugin that generates OpenAPI specifications matching the Connect RPC interface.
+
+## Installation
+
+### Run directly
+
+```bash
+nix run github:spotdemo4/nur#protoc-gen-connect-openapi
+```
+
+### Add to flake
+
+```nix
+devShells.default = pkgs.mkShell {
+  packages = with pkgs.trev; [
+    protoc-gen-connect-openapi
+    protobuf
+  ];
+};
+```
+
+## Usage
+
+### Generate OpenAPI spec
+
+Generate an OpenAPI specification from your proto files:
+
+```bash
+protoc --connect-openapi_out=. \
+  --connect-openapi_opt=base_url=https://api.example.com \
+  api/v1/*.proto
+```
+
+### Specify output file
+
+```bash
+protoc --connect-openapi_out=. \
+  --connect-openapi_opt=output=openapi.yaml \
+  api/v1/*.proto
+```
+
+### Multiple services
+
+Generate separate specs for each service:
+
+```bash
+protoc --connect-openapi_out=. \
+  --connect-openapi_opt=separate_services=true \
+  api/v1/*.proto
+```
+
+## Configuration options
+
+Customize the generated OpenAPI spec:
+
+<ParamField path="base_url" type="string">
+  The base URL for your API (e.g., `https://api.example.com`)
+</ParamField>
+
+<ParamField path="output" type="string">
+  Output file name (default: `openapi.yaml`)
+</ParamField>
+
+<ParamField path="format" type="string">
+  Output format: `yaml` or `json` (default: `yaml`)
+</ParamField>
+
+<ParamField path="title" type="string">
+  API title in the OpenAPI spec
+</ParamField>
+
+<ParamField path="version" type="string">
+  API version in the OpenAPI spec
+</ParamField>
+
+<ParamField path="separate_services" type="boolean">
+  Generate separate files for each service (default: `false`)
+</ParamField>
+
+## Example
+
+Given a Connect RPC service:
+
+```protobuf api/v1/users.proto
+syntax = "proto3";
+
+package users.v1;
+
+service UserService {
+  rpc GetUser(GetUserRequest) returns (GetUserResponse) {}
+  rpc CreateUser(CreateUserRequest) returns (CreateUserResponse) {}
+}
+
+message GetUserRequest {
+  string user_id = 1;
+}
+
+message GetUserResponse {
+  string user_id = 1;
+  string name = 2;
+  string email = 3;
+}
+```
+
+Generate OpenAPI:
+
+```bash
+protoc --connect-openapi_out=. \
+  --connect-openapi_opt=base_url=https://api.example.com \
+  --connect-openapi_opt=title="User API" \
+  --connect-openapi_opt=version=v1 \
+  api/v1/users.proto
+```
+
+This generates `openapi.yaml` with Connect RPC HTTP endpoints:
+
+```yaml
+openapi: 3.0.0
+info:
+  title: User API
+  version: v1
+servers:
+  - url: https://api.example.com
+paths:
+  /users.v1.UserService/GetUser:
+    post:
+      operationId: users.v1.UserService.GetUser
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/users.v1.GetUserRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/users.v1.GetUserResponse'
+```
+
+## Build automation
+
+Integrate into your Nix build:
+
+```nix
+stdenv.mkDerivation {
+  name = "api-docs";
+  src = ./proto;
+  
+  nativeBuildInputs = with pkgs.trev; [
+    protobuf
+    protoc-gen-connect-openapi
+  ];
+  
+  buildPhase = ''
+    protoc --connect-openapi_out=$out \
+      --connect-openapi_opt=base_url=https://api.example.com \
+      api/v1/*.proto
+  '';
+}
+```
+
+<Note>
+This package is pending inclusion in nixpkgs: [NixOS/nixpkgs#398495](https://github.com/NixOS/nixpkgs/pull/398495)
+</Note>
+
+<Tip>
+Combine with API documentation tools like Redoc or Swagger UI to generate interactive API documentation from the OpenAPI spec.
+</Tip>
+
+## Links
+
+- [GitHub Repository](https://github.com/sudorandom/protoc-gen-connect-openapi)
+- [Connect RPC](https://connect.build/)
+- [OpenAPI Specification](https://spec.openapis.org/oas/latest.html)

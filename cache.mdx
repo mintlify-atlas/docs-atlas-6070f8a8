@@ -1,0 +1,194 @@
+---
+title: Binary Cache
+description: Configure the binary cache to download pre-built packages instead of building from source
+---
+
+All packages in this repository are automatically built and cached on each update. Configure your system to pull from the cache instead of building packages locally.
+
+<Note>
+  The cache is hosted at `https://nix.trev.zip` and requires the trusted public key for verification.
+</Note>
+
+## Single Flake Configuration
+
+Add cache configuration to your `flake.nix` using `nixConfig`:
+
+```nix flake.nix
+{
+  nixConfig = {
+    extra-substituters = [
+      "https://nix.trev.zip"
+    ];
+    extra-trusted-public-keys = [
+      "trev:I39N/EsnHkvfmsbx8RUW+ia5dOzojTQNCTzKYij1chU="
+    ];
+  };
+
+  inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
+    trev = {
+      url = "github:spotdemo4/nur";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
+
+  outputs = { nixpkgs, trev, ... }: {
+    # Your configuration here
+  };
+}
+```
+
+<Accordion title="How nixConfig works">
+  The `nixConfig` attribute in your flake is applied when you run commands like `nix build`, `nix develop`, or `nix run`. This configuration only affects commands run from this specific flake.
+
+  Users of your flake will also benefit from this cache configuration automatically.
+</Accordion>
+
+## System-Wide Configuration
+
+Configure the cache for all Nix operations on your NixOS system:
+
+<Steps>
+  <Step title="Add to NixOS configuration">
+    Add the cache to your NixOS configuration module:
+
+    ```nix configuration.nix
+    {
+      nix.settings = {
+        trusted-substituters = [
+          "https://nix.trev.zip"
+        ];
+        trusted-public-keys = [
+          "trev:I39N/EsnHkvfmsbx8RUW+ia5dOzojTQNCTzKYij1chU="
+        ];
+      };
+    }
+    ```
+
+    <Warning>
+      Use `trusted-substituters` and `trusted-public-keys` (not `extra-substituters`) for system-wide configuration to ensure unprivileged users can access the cache.
+    </Warning>
+  </Step>
+
+  <Step title="Rebuild your system">
+    Apply the configuration:
+
+    ```bash
+    sudo nixos-rebuild switch
+    ```
+  </Step>
+
+  <Step title="Verify cache access">
+    Check that the cache is accessible:
+
+    ```bash
+    nix store ping --store https://nix.trev.zip
+    ```
+
+    You should see output indicating the store is reachable.
+  </Step>
+</Steps>
+
+## Home Manager Configuration
+
+For home-manager users, add the cache configuration:
+
+```nix home.nix
+{
+  home.sessionVariables = {
+    NIX_CONFIG = ''
+      extra-substituters = https://nix.trev.zip
+      extra-trusted-public-keys = trev:I39N/EsnHkvfmsbx8RUW+ia5dOzojTQNCTzKYij1chU=
+    '';
+  };
+}
+```
+
+## Multi-User Installation
+
+On multi-user Nix installations (including NixOS), configure `/etc/nix/nix.conf`:
+
+```conf /etc/nix/nix.conf
+trusted-substituters = https://cache.nixos.org https://nix.trev.zip
+trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= trev:I39N/EsnHkvfmsbx8RUW+ia5dOzojTQNCTzKYij1chU=
+```
+
+Then restart the Nix daemon:
+
+```bash
+sudo systemctl restart nix-daemon
+```
+
+## Verification
+
+Verify that packages are being pulled from the cache:
+
+<Steps>
+  <Step title="Clear local cache">
+    Run a build with verbose output to see which substituters are used:
+
+    ```bash
+    nix build github:spotdemo4/nur#bobgen --print-build-logs
+    ```
+  </Step>
+
+  <Step title="Check for cache hits">
+    Look for lines indicating downloads from the cache:
+
+    ```
+    copying path '/nix/store/...-bobgen-...' from 'https://nix.trev.zip'...
+    ```
+
+    If you see compilation output instead, the cache isn't configured correctly.
+  </Step>
+</Steps>
+
+## Cache Information
+
+<CardGroup cols={2}>
+  <Card title="Cache URL" icon="server">
+    `https://nix.trev.zip`
+  </Card>
+  <Card title="Public Key" icon="key">
+    `trev:I39N/EsnHkvfmsbx8RUW+ia5dOzojTQNCTzKYij1chU=`
+  </Card>
+  <Card title="Update Frequency" icon="clock">
+    Automatic on every repository update
+  </Card>
+  <Card title="Retention" icon="database">
+    All built packages are cached
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Packages are still building from source">
+    1. Verify the cache URL is correct in your configuration
+    2. Check that the public key matches exactly
+    3. Ensure you've restarted the Nix daemon or rebuilt your system
+    4. Run `nix store ping --store https://nix.trev.zip` to test connectivity
+  </Accordion>
+
+  <Accordion title="Permission denied when accessing cache">
+    Use `trusted-substituters` instead of `extra-substituters` in your system configuration. The `trusted-` prefix allows unprivileged users to use the cache.
+  </Accordion>
+
+  <Accordion title="Cache is slow or timing out">
+    The cache server may be experiencing high load. You can temporarily disable it by removing it from your substituters list, though this will require building packages from source.
+  </Accordion>
+</AccordionGroup>
+
+## Alternative: Per-Command Cache
+
+Use the cache for a single command without configuring it system-wide:
+
+```bash
+nix build github:spotdemo4/nur#bobgen \
+  --substituters "https://cache.nixos.org https://nix.trev.zip" \
+  --trusted-public-keys "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= trev:I39N/EsnHkvfmsbx8RUW+ia5dOzojTQNCTzKYij1chU="
+```
+
+<Note>
+  This approach requires typing the full command each time. For regular use, configure the cache in your flake or system configuration instead.
+</Note>

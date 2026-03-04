@@ -1,0 +1,410 @@
+---
+title: Nix Container Image
+description: Official Nix 2.34.0 container image for reproducible builds
+icon: cube
+---
+
+The official NixOS Nix container image, wrapped for use in Nix builds with reproducible hashing and content addressing.
+
+## Image Details
+
+<ParamField path="Image" type="string">
+  `docker.io/nixos/nix:2.34.0`
+</ParamField>
+
+<ParamField path="Digest" type="string">
+  `sha256:b9c9611c8530fa8049a1215b20638536e1e71dcaf85212e47845112caf3adeea`
+</ParamField>
+
+<ParamField path="Nix Hash" type="string">
+  `sha256-3t6p1wzOWhcWQZvfbkTqWJtCj64XIwmGbnfXL4JzsdQ=`
+</ParamField>
+
+<ParamField path="Architecture" type="string">
+  `linux/amd64`
+</ParamField>
+
+<ParamField path="Version" type="string">
+  `2.34.0`
+</ParamField>
+
+## Source Configuration
+
+The image is defined in `/images/nix/default.nix`:
+
+```nix images/nix/default.nix
+{ pkgs }:
+let
+  image = "docker.io/nixos/nix:2.34.0@sha256:b9c9611c8530fa8049a1215b20638536e1e71dcaf85212e47845112caf3adeea";
+  parts = builtins.match "(.+/)(.+):(.+)@(.+)" image;
+in
+(pkgs.dockerTools.pullImage {
+  imageName = builtins.elemAt parts 0 + builtins.elemAt parts 1;
+  finalImageName = builtins.elemAt parts 1;
+  finalImageTag = builtins.elemAt parts 2;
+  imageDigest = builtins.elemAt parts 3;
+  hash = "sha256-3t6p1wzOWhcWQZvfbkTqWJtCj64XIwmGbnfXL4JzsdQ=";
+  os = "linux";
+  arch = "amd64";
+}).overrideAttrs
+  {
+    __structuredAttrs = true;
+    unsafeDiscardReferences.out = true;
+  }
+```
+
+## Usage
+
+### In a Nix Flake
+
+Reference the Nix image in your flake:
+
+```nix flake.nix
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nur-nix.url = "github:yourusername/nur-nix";
+  };
+
+  outputs = { self, nixpkgs, nur-nix }: {
+    packages.x86_64-linux.nix-container = 
+      nur-nix.images.x86_64-linux.nix;
+  };
+}
+```
+
+### Build and Load
+
+Build the image and load it into Docker or Podman:
+
+<CodeGroup>
+```bash Docker
+# Build the image
+nix build github:yourusername/nur-nix#images.x86_64-linux.nix
+
+# Load into Docker
+docker load < result
+
+# Run the container
+docker run --rm nixos/nix:2.34.0 nix --version
+```
+
+```bash Podman
+# Build the image
+nix build github:yourusername/nur-nix#images.x86_64-linux.nix
+
+# Load into Podman
+podman load < result
+
+# Run the container
+podman run --rm nixos/nix:2.34.0 nix --version
+```
+</CodeGroup>
+
+### Direct Usage
+
+Use the image directly without a flake:
+
+```bash
+# Build from local checkout
+nix build .#images.x86_64-linux.nix
+
+# Or with nix-build
+nix-build -A images.nix
+```
+
+## Common Use Cases
+
+<AccordionGroup>
+  <Accordion title="CI/CD Builds" icon="gears">
+    Use Nix in containerized CI/CD pipelines:
+    
+    ```yaml .github/workflows/build.yml
+    jobs:
+      build:
+        runs-on: ubuntu-latest
+        container:
+          image: nixos/nix:2.34.0
+        steps:
+          - uses: actions/checkout@v4
+          - name: Build with Nix
+            run: nix build
+    ```
+  </Accordion>
+  
+  <Accordion title="Reproducible Builds" icon="rotate">
+    Build Nix expressions in a clean, reproducible environment:
+    
+    ```bash
+    docker run --rm -v $(pwd):/workspace \
+      -w /workspace \
+      nixos/nix:2.34.0 \
+      nix build --experimental-features "nix-command flakes"
+    ```
+  </Accordion>
+  
+  <Accordion title="Development Environment" icon="code">
+    Run a Nix development shell in a container:
+    
+    ```bash
+    docker run -it --rm -v $(pwd):/workspace \
+      -w /workspace \
+      nixos/nix:2.34.0 \
+      nix develop
+    ```
+  </Accordion>
+  
+  <Accordion title="Package Testing" icon="flask">
+    Test Nix packages in isolation:
+    
+    ```bash
+    docker run --rm nixos/nix:2.34.0 \
+      nix-shell -p hello --run "hello"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## CI/CD Integration
+
+### GitHub Actions
+
+Use the Nix image in GitHub Actions workflows:
+
+```yaml .github/workflows/nix-build.yml
+name: Nix Build
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: nixos/nix:2.34.0
+      options: --user root
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Configure Nix
+        run: |
+          mkdir -p ~/.config/nix
+          echo "experimental-features = nix-command flakes" > ~/.config/nix/nix.conf
+      
+      - name: Build
+        run: nix build
+      
+      - name: Run checks
+        run: nix flake check
+```
+
+### GitLab CI
+
+Use the Nix image in GitLab CI pipelines:
+
+```yaml .gitlab-ci.yml
+image: nixos/nix:2.34.0
+
+before_script:
+  - mkdir -p ~/.config/nix
+  - echo "experimental-features = nix-command flakes" > ~/.config/nix/nix.conf
+
+build:
+  script:
+    - nix build
+    - nix flake check
+```
+
+## In NixOS Configuration
+
+Use the Nix image in a NixOS container configuration:
+
+```nix configuration.nix
+{ config, pkgs, nur-nix, ... }:
+
+{
+  virtualisation.oci-containers.containers.nix-builder = {
+    imageFile = nur-nix.images.x86_64-linux.nix;
+    image = "nixos/nix:2.34.0";
+    volumes = [
+      "/nix:/nix"
+      "/tmp:/tmp"
+    ];
+    extraOptions = [
+      "--privileged"
+    ];
+  };
+}
+```
+
+<Warning>
+  Running Nix in a container may require privileged access for certain operations. Use `--privileged` cautiously and only when necessary.
+</Warning>
+
+## Configuration
+
+### Enabling Flakes
+
+The container doesn't have flakes enabled by default. Enable them:
+
+```bash
+# Create config directory
+docker run --rm nixos/nix:2.34.0 sh -c '
+  mkdir -p ~/.config/nix && \
+  echo "experimental-features = nix-command flakes" > ~/.config/nix/nix.conf
+'
+```
+
+Or mount a config file:
+
+```bash
+# Create nix.conf locally
+echo "experimental-features = nix-command flakes" > nix.conf
+
+# Mount it into the container
+docker run --rm \
+  -v $(pwd)/nix.conf:/etc/nix/nix.conf \
+  nixos/nix:2.34.0 \
+  nix flake show
+```
+
+### Binary Cache Configuration
+
+Configure trusted binary caches:
+
+```nix nix.conf
+experimental-features = nix-command flakes
+substituters = https://cache.nixos.org https://cache.example.com
+trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+```
+
+Mount the config:
+
+```bash
+docker run --rm \
+  -v $(pwd)/nix.conf:/etc/nix/nix.conf \
+  nixos/nix:2.34.0 \
+  nix build
+```
+
+## Advanced Usage
+
+### Multi-Stage Builds
+
+Use the Nix image in multi-stage Docker builds:
+
+```dockerfile Dockerfile
+FROM nixos/nix:2.34.0 AS builder
+
+WORKDIR /app
+COPY . .
+
+RUN nix build --experimental-features "nix-command flakes"
+
+FROM alpine:latest
+COPY --from=builder /app/result /app
+CMD ["/app/bin/myapp"]
+```
+
+### Remote Builds
+
+Use the container as a remote builder:
+
+```nix
+# On your local machine
+nix build \
+  --builders "ssh://user@remote-host x86_64-linux" \
+  --max-jobs 4
+```
+
+### Nix Store Sharing
+
+Share the Nix store between container runs:
+
+```bash
+# Create a named volume for the Nix store
+docker volume create nix-store
+
+# Use it in your containers
+docker run --rm \
+  -v nix-store:/nix \
+  nixos/nix:2.34.0 \
+  nix-shell -p hello --run hello
+```
+
+<Note>
+  Sharing the Nix store can significantly speed up subsequent builds by reusing previously built derivations.
+</Note>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Permission Errors" icon="lock">
+    If you encounter permission errors accessing `/nix`:
+    
+    ```bash
+    # Run as root in the container
+    docker run --rm --user root nixos/nix:2.34.0 nix build
+    
+    # Or fix permissions on volume
+    docker run --rm --user root -v nix-store:/nix alpine chown -R 1000:1000 /nix
+    ```
+  </Accordion>
+  
+  <Accordion title="Flakes Not Working" icon="puzzle-piece">
+    If flakes commands fail, ensure experimental features are enabled:
+    
+    ```bash
+    docker run --rm nixos/nix:2.34.0 sh -c '
+      mkdir -p ~/.config/nix && \
+      echo "experimental-features = nix-command flakes" > ~/.config/nix/nix.conf && \
+      nix flake show
+    '
+    ```
+  </Accordion>
+  
+  <Accordion title="Hash Mismatch" icon="triangle-exclamation">
+    If you encounter a hash mismatch error:
+    
+    1. Update the digest in the source file
+    2. Run the build to get the new hash
+    3. Update the `hash` field with the new value
+    
+    ```bash
+    nix build .#images.x86_64-linux.nix 2>&1 | grep "got:"
+    ```
+  </Accordion>
+  
+  <Accordion title="Sandbox Issues" icon="box">
+    Some Nix operations require sandbox to be disabled:
+    
+    ```bash
+    docker run --rm \
+      -e NIX_CONFIG="sandbox = false" \
+      nixos/nix:2.34.0 \
+      nix build
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Version Information
+
+<Info>
+  This image uses **Nix 2.34.0**, which includes improved flakes support, better error messages, and performance enhancements.
+</Info>
+
+Key features in Nix 2.34.0:
+- Improved flakes stability
+- Better content-addressed derivations
+- Enhanced store path verification
+- Updated CLI with better UX
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="FFmpeg Image" icon="video" href="/images/ffmpeg">
+    Explore the FFmpeg container image
+  </Card>
+  <Card title="Images Overview" icon="layer-group" href="/images/overview">
+    Back to images overview
+  </Card>
+</CardGroup>

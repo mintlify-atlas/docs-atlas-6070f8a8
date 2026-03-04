@@ -1,0 +1,81 @@
+---
+title: bumper
+description: Version bumper for projects using git and semantic versioning
+---
+
+[bumper](https://github.com/spotdemo4/bumper) is a version bumper for projects using git and semantic versioning. It automates the process of incrementing version numbers and creating git tags.
+
+## Installation
+
+### Run directly
+
+```bash
+nix run github:spotdemo4/nur#bumper
+```
+
+### Add to flake
+
+```nix
+devShells.default = pkgs.mkShell {
+  packages = with pkgs.trev; [
+    bumper
+  ];
+};
+```
+
+## Usage
+
+### Bump patch version
+
+```bash
+bumper patch
+```
+
+### Bump minor version
+
+```bash
+bumper minor
+```
+
+### Bump major version
+
+```bash
+bumper major
+```
+
+### Preview changes
+
+See what version would be created without making changes:
+
+```bash
+bumper patch --dry-run
+```
+
+## Features
+
+- **Semantic versioning**: Follows semver (major.minor.patch) conventions
+- **Git integration**: Automatically creates tags
+- **Dry run mode**: Preview changes before applying
+- **Customizable**: Configure tag prefixes and formats
+
+## How it works
+
+<Steps>
+  <Step title="Detect current version">
+    Bumper reads the current version from git tags
+  </Step>
+  <Step title="Calculate new version">
+    Increments the version number based on your choice (major, minor, patch)
+  </Step>
+  <Step title="Create git tag">
+    Creates a new git tag with the updated version
+  </Step>
+</Steps>
+
+<Tip>
+Use bumper in CI/CD pipelines to automate version management during releases.
+</Tip>
+
+## Links
+
+- [GitHub Repository](https://github.com/spotdemo4/bumper)

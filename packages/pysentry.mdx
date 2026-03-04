@@ -1,0 +1,196 @@
+---
+title: pysentry
+description: Scan Python dependencies for known security vulnerabilities
+---
+
+[pysentry](https://github.com/nyudenkov/pysentry) scans your Python dependencies for known security vulnerabilities by checking them against vulnerability databases.
+
+## Installation
+
+### Run directly
+
+```bash
+nix run github:spotdemo4/nur#pysentry
+```
+
+### Add to flake
+
+```nix
+devShells.default = pkgs.mkShell {
+  packages = with pkgs.trev; [
+    pysentry
+  ];
+};
+```
+
+## Usage
+
+### Scan requirements.txt
+
+```bash
+pysentry check requirements.txt
+```
+
+### Scan Pipfile
+
+```bash
+pysentry check Pipfile
+```
+
+### Scan pyproject.toml
+
+```bash
+pysentry check pyproject.toml
+```
+
+### Scan installed packages
+
+Check currently installed packages in your environment:
+
+```bash
+pysentry check --installed
+```
+
+## Output formats
+
+### Default output
+
+```bash
+pysentry check requirements.txt
+```
+
+Produces human-readable output:
+
+```
+✗ django==3.2.0
+  - CVE-2023-12345: SQL injection vulnerability
+  - Fixed in: 3.2.19
+  - Severity: HIGH
+
+✗ requests==2.25.0
+  - CVE-2023-67890: Certificate validation bypass
+  - Fixed in: 2.31.0
+  - Severity: MEDIUM
+```
+
+### JSON output
+
+```bash
+pysentry check requirements.txt --json > vulnerabilities.json
+```
+
+### Fail on vulnerabilities
+
+Exit with non-zero status if vulnerabilities are found:
+
+```bash
+pysentry check requirements.txt --strict
+```
+
+## CI/CD integration
+
+### GitHub Actions
+
+```yaml .github/workflows/security.yml
+name: Dependency Security Scan
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  schedule:
+    - cron: '0 0 * * 1'  # Weekly
+
+jobs:
+  pysentry:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            extra-substituters = https://nix.trev.zip
+            extra-trusted-public-keys = trev:I39N/EsnHkvfmsbx8RUW+ia5dOzojTQNCTzKYij1chU=
+      
+      - name: Scan dependencies
+        run: |
+          nix run github:spotdemo4/nur#pysentry -- check requirements.txt --strict
+```
+
+### GitLab CI
+
+```yaml .gitlab-ci.yml
+security:scan:python:
+  image: nixos/nix
+  script:
+    - nix run github:spotdemo4/nur#pysentry -- check requirements.txt --json > vulnerabilities.json
+  artifacts:
+    reports:
+      vulnerability: vulnerabilities.json
+```
+
+## Filter by severity
+
+Only report vulnerabilities of specific severity:
+
+```bash
+pysentry check requirements.txt --min-severity HIGH
+```
+
+Severity levels:
+- `LOW`
+- `MEDIUM`
+- `HIGH`
+- `CRITICAL`
+
+## Ignore specific vulnerabilities
+
+Create a `.pysentry-ignore` file:
+
+```
+CVE-2023-12345  # False positive in test dependencies
+CVE-2023-67890  # Mitigated by WAF
+```
+
+Run with ignore file:
+
+```bash
+pysentry check requirements.txt --ignore-file .pysentry-ignore
+```
+
+## Update vulnerability database
+
+pysentry automatically updates its vulnerability database. To manually trigger an update:
+
+```bash
+pysentry update
+```
+
+## Best practices
+
+<Tip>
+Run pysentry regularly in CI/CD and on a schedule to catch newly disclosed vulnerabilities in your dependencies.
+</Tip>
+
+<Warning>
+Don't ignore vulnerabilities without understanding the risk. Document the reason in your ignore file and review ignored vulnerabilities regularly.
+</Warning>
+
+<Note>
+pysentry checks against multiple vulnerability databases including OSV, PyPI Advisory Database, and CVE.
+</Note>
+
+## Comparison with other tools
+
+| Feature | pysentry | pip-audit | safety |
+|---------|----------|-----------|--------|
+| Multiple file formats | ✓ | ✓ | ✓ |
+| JSON output | ✓ | ✓ | ✓ |
+| Nix integration | ✓ | - | - |
+| Free tier | ✓ | ✓ | Limited |
+| Offline mode | ✓ | - | - |
+
+## Links
+
+- [GitHub Repository](https://github.com/nyudenkov/pysentry)

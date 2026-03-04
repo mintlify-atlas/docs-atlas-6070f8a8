@@ -1,0 +1,247 @@
+---
+title: FFmpeg Container Image
+description: Pre-built FFmpeg 8.0.1 container image for Nix
+icon: video
+---
+
+A pre-configured FFmpeg container image from LinuxServer.io, wrapped for use in Nix builds with reproducible hashing.
+
+## Image Details
+
+<ParamField path="Image" type="string">
+  `docker.io/linuxserver/ffmpeg:8.0.1`
+</ParamField>
+
+<ParamField path="Digest" type="string">
+  `sha256:211841bb80a0d1faccbe7547ac5034ec02b94d5dd2a4128468006e7052662068`
+</ParamField>
+
+<ParamField path="Nix Hash" type="string">
+  `sha256-a4EFTOErHXxmzetxBkZCbAglfCcJ/eH8LwsgWtKTePo=`
+</ParamField>
+
+<ParamField path="Architecture" type="string">
+  `linux/amd64`
+</ParamField>
+
+<ParamField path="Version" type="string">
+  `8.0.1`
+</ParamField>
+
+## Source Configuration
+
+The image is defined in `/images/ffmpeg/default.nix`:
+
+```nix images/ffmpeg/default.nix
+{ pkgs }:
+let
+  image = "docker.io/linuxserver/ffmpeg:8.0.1@sha256:211841bb80a0d1faccbe7547ac5034ec02b94d5dd2a4128468006e7052662068";
+  parts = builtins.match "(.+/)(.+):(.+)@(.+)" image;
+in
+(pkgs.dockerTools.pullImage {
+  imageName = builtins.elemAt parts 0 + builtins.elemAt parts 1;
+  finalImageName = builtins.elemAt parts 1;
+  finalImageTag = builtins.elemAt parts 2;
+  imageDigest = builtins.elemAt parts 3;
+  hash = "sha256-a4EFTOErHXxmzetxBkZCbAglfCcJ/eH8LwsgWtKTePo=";
+  os = "linux";
+  arch = "amd64";
+}).overrideAttrs
+  {
+    __structuredAttrs = true;
+    unsafeDiscardReferences.out = true;
+  }
+```
+
+## Usage
+
+### In a Nix Flake
+
+Reference the FFmpeg image in your flake:
+
+```nix flake.nix
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nur-nix.url = "github:yourusername/nur-nix";
+  };
+
+  outputs = { self, nixpkgs, nur-nix }: {
+    packages.x86_64-linux.ffmpeg-container = 
+      nur-nix.images.x86_64-linux.ffmpeg;
+  };
+}
+```
+
+### Build and Load
+
+Build the image and load it into Docker or Podman:
+
+<CodeGroup>
+```bash Docker
+# Build the image
+nix build github:yourusername/nur-nix#images.x86_64-linux.ffmpeg
+
+# Load into Docker
+docker load < result
+
+# Run the container
+docker run --rm linuxserver/ffmpeg:8.0.1 -version
+```
+
+```bash Podman
+# Build the image
+nix build github:yourusername/nur-nix#images.x86_64-linux.ffmpeg
+
+# Load into Podman
+podman load < result
+
+# Run the container
+podman run --rm linuxserver/ffmpeg:8.0.1 -version
+```
+</CodeGroup>
+
+### Direct Usage
+
+Use the image directly without a flake:
+
+```bash
+# Build from local checkout
+nix build .#images.x86_64-linux.ffmpeg
+
+# Or with nix-build
+nix-build -A images.ffmpeg
+```
+
+## Common Use Cases
+
+<AccordionGroup>
+  <Accordion title="Video Transcoding" icon="film">
+    Use FFmpeg for batch video transcoding in CI/CD pipelines:
+    
+    ```bash
+    docker run --rm -v $(pwd):/workspace \
+      linuxserver/ffmpeg:8.0.1 \
+      -i /workspace/input.mp4 \
+      -c:v libx264 -crf 23 \
+      /workspace/output.mp4
+    ```
+  </Accordion>
+  
+  <Accordion title="Audio Extraction" icon="waveform">
+    Extract audio tracks from video files:
+    
+    ```bash
+    docker run --rm -v $(pwd):/workspace \
+      linuxserver/ffmpeg:8.0.1 \
+      -i /workspace/video.mp4 \
+      -vn -acodec copy \
+      /workspace/audio.aac
+    ```
+  </Accordion>
+  
+  <Accordion title="Format Conversion" icon="arrows-rotate">
+    Convert between different video formats:
+    
+    ```bash
+    docker run --rm -v $(pwd):/workspace \
+      linuxserver/ffmpeg:8.0.1 \
+      -i /workspace/input.avi \
+      -c:v copy -c:a copy \
+      /workspace/output.mkv
+    ```
+  </Accordion>
+  
+  <Accordion title="Thumbnail Generation" icon="image">
+    Generate video thumbnails:
+    
+    ```bash
+    docker run --rm -v $(pwd):/workspace \
+      linuxserver/ffmpeg:8.0.1 \
+      -i /workspace/video.mp4 \
+      -ss 00:00:10 -vframes 1 \
+      /workspace/thumb.jpg
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## In NixOS Configuration
+
+Use the FFmpeg image in a NixOS container configuration:
+
+```nix configuration.nix
+{ config, pkgs, nur-nix, ... }:
+
+{
+  virtualisation.oci-containers.containers.ffmpeg = {
+    imageFile = nur-nix.images.x86_64-linux.ffmpeg;
+    image = "linuxserver/ffmpeg:8.0.1";
+    volumes = [
+      "/media:/workspace"
+    ];
+  };
+}
+```
+
+<Warning>
+  The LinuxServer.io FFmpeg image runs as a non-root user by default. Ensure your volume mounts have appropriate permissions.
+</Warning>
+
+## Why LinuxServer.io?
+
+The [LinuxServer.io](https://www.linuxserver.io/) FFmpeg image is chosen for:
+
+- **Regular Updates**: Maintained by the LinuxServer.io team with timely security patches
+- **Complete Build**: Includes most FFmpeg features and codecs
+- **Good Documentation**: Well-documented image with clear usage examples
+- **Security**: Runs as non-root user and follows best practices
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Hash Mismatch Error" icon="triangle-exclamation">
+    If you encounter a hash mismatch error, the upstream image may have changed. To fix:
+    
+    1. Update the digest in the source file
+    2. Run the build to get the new hash
+    3. Update the `hash` field with the new value
+    
+    ```bash
+    nix build .#images.x86_64-linux.ffmpeg 2>&1 | grep "got:"
+    ```
+  </Accordion>
+  
+  <Accordion title="Permission Denied" icon="lock">
+    If you get permission errors when mounting volumes:
+    
+    ```bash
+    # Fix permissions on the host
+    chmod -R 755 /path/to/workspace
+    
+    # Or run with user mapping (Docker)
+    docker run --user $(id -u):$(id -g) ...
+    ```
+  </Accordion>
+  
+  <Accordion title="Image Not Found After Load" icon="magnifying-glass">
+    After loading, verify the image name and tag:
+    
+    ```bash
+    docker images | grep ffmpeg
+    
+    # Use the exact name:tag shown
+    docker run --rm linuxserver/ffmpeg:8.0.1 -version
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Nix Image" icon="cube" href="/images/nix">
+    Explore the official Nix container image
+  </Card>
+  <Card title="Images Overview" icon="layer-group" href="/images/overview">
+    Back to images overview
+  </Card>
+</CardGroup>

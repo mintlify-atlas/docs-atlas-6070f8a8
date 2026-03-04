@@ -1,0 +1,112 @@
+---
+title: go-over
+description: Tool to audit Erlang & Elixir dependencies
+---
+
+[go-over](https://github.com/bwireman/go-over) is a tool to audit Erlang and Elixir dependencies for security vulnerabilities and outdated packages.
+
+## Installation
+
+### Run directly
+
+```bash
+nix run github:spotdemo4/nur#go-over
+```
+
+### Add to flake
+
+```nix
+devShells.default = pkgs.mkShell {
+  packages = with pkgs.trev; [
+    go-over
+  ];
+};
+```
+
+## Usage
+
+### Audit Mix dependencies
+
+Scan an Elixir project's dependencies:
+
+```bash
+cd your-elixir-project
+go-over
+```
+
+### Audit Rebar3 dependencies
+
+Scan an Erlang project:
+
+```bash
+cd your-erlang-project
+go-over
+```
+
+### Check specific dependency file
+
+```bash
+go-over --file mix.lock
+```
+
+## Features
+
+- **Security scanning**: Check dependencies for known vulnerabilities
+- **Outdated detection**: Find packages that need updates
+- **Mix support**: Works with Elixir Mix projects
+- **Rebar3 support**: Works with Erlang Rebar3 projects
+- **CI/CD integration**: Exit codes for automated checks
+
+## CI/CD integration
+
+### GitHub Actions
+
+Add dependency auditing to your CI pipeline:
+
+```yaml .github/workflows/audit.yml
+name: Audit Dependencies
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  schedule:
+    - cron: '0 0 * * 1'  # Weekly
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            extra-substituters = https://nix.trev.zip
+            extra-trusted-public-keys = trev:I39N/EsnHkvfmsbx8RUW+ia5dOzojTQNCTzKYij1chU=
+      
+      - name: Audit dependencies
+        run: nix run github:spotdemo4/nur#go-over
+```
+
+## Output format
+
+go-over provides clear output about dependency issues:
+
+```
+✓ Package A: OK (v1.2.3)
+⚠ Package B: Outdated (v1.0.0 → v2.0.0 available)
+✗ Package C: Vulnerable (CVE-2023-12345)
+```
+
+<Warning>
+Always review dependency audit results before updating packages, as major version changes may include breaking changes.
+</Warning>
+
+<Tip>
+Run go-over regularly in CI to catch vulnerable dependencies before they make it to production.
+</Tip>
+
+## Links
+
+- [GitHub Repository](https://github.com/bwireman/go-over)

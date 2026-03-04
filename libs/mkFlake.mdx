@@ -1,0 +1,221 @@
+---
+title: mkFlake
+description: Simplify multi-system flake outputs with a clean, functional API
+---
+
+`mkFlake` is a utility function that eliminates boilerplate when creating Nix flakes that need to support multiple systems. It's similar to `flake-utils.lib.eachDefaultSystem` but with more flexibility.
+
+## Overview
+
+Instead of manually mapping over systems and merging attribute sets, `mkFlake` handles this automatically:
+
+```nix
+# Before: Manual system mapping
+outputs = { self, nixpkgs }:
+  let
+    systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
+  in
+    builtins.foldl' (acc: system: acc // {
+      packages.${system} = # ...
+      apps.${system} = # ...
+    }) {} systems;
+
+# After: Using mkFlake
+outputs = { self, nixpkgs, nur }:
+  nur.lib.mkFlake { } (system:
+    let pkgs = nixpkgs.legacyPackages.${system};
+    in {
+      packages.hello = pkgs.hello;
+      apps.greet = { /* ... */ };
+    }
+  );
+```
+
+## Function Signature
+
+```nix
+mkFlake :: { systems :: [String] } -> (String -> AttrSet) -> AttrSet
+```
+
+<ParamField path="systems" type="list of strings" default='["aarch64-linux" "aarch64-darwin" "x86_64-darwin" "x86_64-linux"]'>
+  List of systems to generate outputs for. Defaults to the four most common platforms.
+</ParamField>
+
+<ParamField path="f" type="function" required>
+  Function that takes a system string and returns an attribute set of flake outputs.
+</ParamField>
+
+### Return Value
+
+Returns an attribute set with outputs structured as `<attr>.<system>.value`, except for ignored attributes which are merged directly.
+
+## Ignored Attributes
+
+The following attributes are **not** nested under `<system>` but merged directly:
+
+- `libs`
+- `overlays`
+- `nixosModules`
+- `nixosConfigurations`
+- `hydraJobs`
+- `templates`
+
+This allows you to define system-independent outputs:
+
+```nix
+nur.lib.mkFlake { } (system: {
+  packages.myapp = /* system-specific */;
+  overlays.default = /* shared across systems */;
+});
+# Result:
+# {
+#   packages.x86_64-linux.myapp = ...;
+#   packages.aarch64-linux.myapp = ...;
+#   overlays.default = ...; # NOT nested!
+# }
+```
+
+## Examples
+
+### Basic Multi-System Flake
+
+```nix flake.nix
+{
+  inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    nur.url = "github:your-org/nur-nix";
+  };
+
+  outputs = { self, nixpkgs, nur }:
+    nur.lib.mkFlake { } (system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+      in
+      {
+        packages.default = pkgs.stdenv.mkDerivation {
+          name = "my-package";
+          src = ./src;
+        };
+
+        devShells.default = pkgs.mkShell {
+          packages = with pkgs; [ git vim ];
+        };
+      }
+    );
+}
+```
+
+### Custom System List
+
+If you only need to support Linux systems:
+
+```nix flake.nix
+nur.lib.mkFlake {
+  systems = [ "x86_64-linux" "aarch64-linux" ];
+} (system:
+  let
+    pkgs = nixpkgs.legacyPackages.${system};
+  in
+  {
+    packages.server = pkgs.buildGoModule {
+      # Linux-only server
+    };
+  }
+);
+```
+
+### Combining with Other Libraries
+
+Use `mkFlake` with `mkApps` and `mkChecks`:
+
+```nix flake.nix
+{
+  outputs = { self, nixpkgs, nur }:
+    nur.lib.mkFlake { } (system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+        lib = nur.lib.${system};
+      in
+      {
+        packages.default = /* ... */;
+
+        apps = lib.mkApps {
+          deploy = {
+            script = ''kubectl apply -f ./k8s'';
+            deps = [ pkgs.kubectl ];
+          };
+        };
+
+        checks = lib.mkChecks {
+          format = {
+            script = ''treefmt --check'';
+            deps = [ pkgs.treefmt ];
+          };
+        };
+      }
+    );
+}
+```
+
+### With Overlays and Modules
+
+```nix flake.nix
+nur.lib.mkFlake { } (system:
+  let
+    pkgs = nixpkgs.legacyPackages.${system};
+  in
+  {
+    # System-specific outputs
+    packages.default = pkgs.hello;
+
+    # Shared outputs (not nested under system)
+    overlays.default = final: prev: {
+      myPackage = /* ... */;
+    };
+
+    nixosModules.default = {
+      services.myservice.enable = /* ... */;
+    };
+  }
+);
+```
+
+## Implementation Details
+
+### Impure System Detection
+
+If you run Nix with `--impure`, mkFlake automatically adds `builtins.currentSystem` to the systems list if it's not already included:
+
+```nix
+if !builtins ? currentSystem || builtins.elem builtins.currentSystem systems then
+  systems
+else
+  systems ++ [ builtins.currentSystem ]
+```
+
+This ensures `nix build --impure` works on any system, even if not in the default list.
+
+### Source Location
+
+Implemented in: `libs/mkFlake/default.nix:1`
+
+## Comparison with Alternatives
+
+| Feature | mkFlake | flake-utils | Manual |
+|---------|---------|-------------|--------|
+| Auto system mapping | ✓ | ✓ | ✗ |
+| Custom system list | ✓ | ✗ | ✓ |
+| Impure system support | ✓ | ✗ | ✗ |
+| Ignored attrs | ✓ | ✗ | ✓ |
+| Dependencies | None | flake-utils | None |
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="mkApps" icon="rocket" href="/libs/mkApps">
+    Convert script definitions into flake apps
+  </Card>
+  <Card title="mkChecks" icon="check" href="/libs/mkChecks">
+    Transform check definitions into flake checks
+  </Card>
+</CardGroup>

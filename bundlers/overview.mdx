@@ -1,0 +1,137 @@
+---
+title: Bundlers Overview
+description: Package your Nix applications for cross-platform distribution
+---
+
+Bundlers transform Nix derivations into distributable artifacts for different platforms and deployment targets. Nur Nix provides multiple bundler types optimized for different use cases.
+
+## What are Bundlers?
+
+Bundlers take a Nix derivation (a package built with Nix) and convert it into a format suitable for distribution. This enables you to:
+
+- **Cross-compile** applications for different operating systems and architectures
+- **Containerize** applications as Docker images
+- **Optimize** binary sizes with compression
+- **Distribute** standalone executables without Nix dependencies
+
+## Available Bundlers
+
+Nur Nix provides bundlers organized by compilation target:
+
+<CardGroup cols={2}>
+  <Card title="Deno Bundlers" icon="code" href="/bundlers/deno">
+    Cross-compile JavaScript/TypeScript apps to standalone binaries for 5 platforms
+  </Card>
+  
+  <Card title="Go Bundlers" icon="golang" href="/bundlers/go">
+    Cross-compile Go applications with optional UPX compression for 6 platforms
+  </Card>
+  
+  <Card title="Docker Bundlers" icon="docker" href="/bundlers/docker">
+    Package applications as Docker images with layered or streamed output
+  </Card>
+</CardGroup>
+
+## System Format
+
+Bundler names use the `{system}` format to specify target platforms:
+
+| System | Architecture | OS | Example Use |
+|--------|--------------|----|--------------|
+| `x86_64-linux` | x86_64 (AMD64) | Linux | Servers, cloud VMs |
+| `aarch64-linux` | ARM64 | Linux | Raspberry Pi, ARM servers |
+| `x86_64-darwin` | x86_64 (AMD64) | macOS | Intel Macs |
+| `aarch64-darwin` | ARM64 | macOS | Apple Silicon Macs |
+| `x86_64-windows` | x86_64 (AMD64) | Windows | Desktop/server |
+| `arm-linux` | ARM | Linux | Older ARM devices |
+
+<Note>
+The `{system}` format ensures consistent cross-platform targeting across all bundlers.
+</Note>
+
+## Basic Usage
+
+All bundlers are invoked using the `nix bundle` command:
+
+```bash
+nix bundle \
+  --bundler github:nurpkgs/nur-nix#docker \
+  .#myapp
+```
+
+### Command Structure
+
+- `--bundler` - Specifies the bundler to use (from the Nur Nix registry)
+- `.#myapp` - References the derivation to bundle (from your flake)
+
+## Bundler Categories
+
+### Cross-Compilation Bundlers
+
+Create standalone executables for different platforms:
+
+- **Deno**: `deno-{system}` - For JavaScript/TypeScript applications
+- **Go**: `go-{system}` - For Go applications
+- **Go Compressed**: `go-compress-{system}` - Go with UPX compression
+
+### Container Bundlers
+
+Package applications as Docker images:
+
+- **docker** - Creates a layered Docker image (saved as `.tar.gz`)
+- **docker-stream** - Streams a layered Docker image (for piping to `docker load`)
+
+## Practical Example
+
+Here's how to bundle a Deno application for multiple platforms:
+
+```bash
+# Linux x86_64
+nix bundle \
+  --bundler github:nurpkgs/nur-nix#deno-x86_64-linux \
+  .#myapp
+
+# macOS Apple Silicon
+nix bundle \
+  --bundler github:nurpkgs/nur-nix#deno-aarch64-darwin \
+  .#myapp
+
+# Windows
+nix bundle \
+  --bundler github:nurpkgs/nur-nix#deno-x86_64-windows \
+  .#myapp
+```
+
+## Output Location
+
+Bundled artifacts are placed in the Nix store at:
+
+```
+/nix/store/<hash>-<package-name>-<system>/
+```
+
+For executables:
+```
+/nix/store/<hash>-<package-name>-<system>/bin/<binary-name>
+```
+
+For Docker images:
+```
+/nix/store/<hash>-docker-image-<package-name>.tar.gz
+```
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Deno Bundlers" icon="code" href="/bundlers/deno">
+    JavaScript/TypeScript
+  </Card>
+  
+  <Card title="Go Bundlers" icon="golang" href="/bundlers/go">
+    Go applications
+  </Card>
+  
+  <Card title="Docker Bundlers" icon="docker" href="/bundlers/docker">
+    Container images
+  </Card>
+</CardGroup>

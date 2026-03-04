@@ -1,0 +1,309 @@
+---
+title: mkChecks
+description: Transform simple check definitions into Nix derivations for flake checks
+---
+
+`mkChecks` converts declarative check configurations into proper Nix derivations that can be used in your flake's `checks` output.
+
+## Overview
+
+Define checks with simple script strings instead of writing full derivations:
+
+```nix
+# Before: Manual derivation
+checks.format = pkgs.stdenv.mkDerivation {
+  name = "format-check";
+  src = ./.;
+  nativeBuildInputs = [ pkgs.nixfmt ];
+  doCheck = true;
+  checkPhase = ''nixfmt --check .'';
+  # ... more boilerplate
+};
+
+# After: Using mkChecks
+checks = lib.mkChecks {
+  format = {
+    script = ''nixfmt --check .'';
+    deps = [ pkgs.nixfmt ];
+    root = ./.;
+  };
+};
+```
+
+## Function Signature
+
+```nix
+mkChecks :: AttrSet -> AttrSet
+```
+
+Takes an attribute set where each value is a check configuration, returns an attribute set of derivations.
+
+## Check Configuration
+
+Each check can have the following fields:
+
+<ParamField path="script" type="string">
+  Shell script to run for the check. Cannot be combined with `checkPhase` or `forEach`.
+</ParamField>
+
+<ParamField path="checkPhase" type="string">
+  Custom check phase script. Cannot be combined with `script` or `forEach`.
+</ParamField>
+
+<ParamField path="forEach" type="string">
+  Script to run for each file. The file path is available as `$file`. Cannot be combined with `script` or `checkPhase`.
+</ParamField>
+
+<ParamField path="deps" type="list">
+  List of packages to add to `nativeBuildInputs`. Alias: `nativeBuildInputs`.
+</ParamField>
+
+<ParamField path="src" type="path or derivation">
+  Source to check. Can be a derivation or a path.
+</ParamField>
+
+<ParamField path="root" type="path">
+  Root directory for file selection. Used with `fileset` or `filter`.
+</ParamField>
+
+<ParamField path="fileset" type="fileset">
+  Nix fileset to check. Requires `root` to be set.
+</ParamField>
+
+<ParamField path="filter" type="function">
+  File filter function. Requires `root` to be set.
+</ParamField>
+
+<ParamField path="ignore" type="fileset or list of filesets">
+  Files or directories to exclude from checking.
+</ParamField>
+
+## Environment Variables
+
+All checks run with these environment variables set:
+
+- `HOME`: Temporary directory (for tools that need a home)
+- `TREEFMT_TREE_ROOT`: Current working directory
+
+## Examples
+
+### Basic Format Check
+
+```nix
+checks = lib.mkChecks {
+  format = {
+    script = ''treefmt --check .'';
+    deps = [ pkgs.treefmt ];
+    root = ./.;
+  };
+};
+```
+
+### Multiple Checks
+
+```nix
+checks = lib.mkChecks {
+  format = {
+    script = ''nixfmt --check .'';
+    deps = [ pkgs.nixfmt ];
+    root = ./.;
+  };
+
+  lint = {
+    script = ''statix check .'';
+    deps = [ pkgs.statix ];
+    root = ./.;
+  };
+
+  test = {
+    script = ''pytest tests/'';
+    deps = [ pkgs.python3Packages.pytest ];
+    root = ./.;
+  };
+};
+```
+
+### Per-File Checks
+
+Run a check on each file individually:
+
+```nix
+checks = lib.mkChecks {
+  shellcheck = {
+    forEach = ''shellcheck "$file"'';
+    deps = [ pkgs.shellcheck ];
+    root = ./.;
+    filter = file: file.hasExt "sh";
+  };
+};
+```
+
+The `forEach` script runs with:
+- `$file` set to the absolute path of each file
+- Bash globstar enabled (`shopt -s globstar`)
+- Automatic file type filtering
+
+### Using Fileset Filtering
+
+```nix
+checks = lib.mkChecks {
+  check-nix = {
+    script = ''statix check .'';
+    deps = [ pkgs.statix ];
+    root = ./.;
+    fileset = pkgs.lib.fileset.fileFilter
+      (file: file.hasExt "nix")
+      ./.;
+  };
+};
+```
+
+### Ignoring Files
+
+```nix
+checks = lib.mkChecks {
+  format = {
+    script = ''treefmt --check .'';
+    deps = [ pkgs.treefmt ];
+    root = ./.;
+    ignore = [
+      ./vendor
+      ./node_modules
+    ];
+  };
+};
+```
+
+### Check with Custom Phase
+
+```nix
+checks = lib.mkChecks {
+  custom = {
+    checkPhase = ''
+      echo "Running custom checks"
+      make test
+      make lint
+    '';
+    deps = [ pkgs.gnumake ];
+    src = ./.;
+  };
+};
+```
+
+### Checking a Derivation
+
+You can also add checks to an existing derivation:
+
+```nix
+let
+  myPackage = pkgs.buildGoModule {
+    pname = "my-app";
+    version = "1.0.0";
+    src = ./.;
+    # ...
+  };
+in
+{
+  checks = lib.mkChecks {
+    # Run tests on the built package
+    test-package = {
+      src = myPackage;
+      checkPhase = ''go test ./...'';
+      deps = [ pkgs.go ];
+    };
+  };
+}
+```
+
+When `src` is a derivation, `mkChecks` uses `.overrideAttrs` to add the check phase.
+
+## Usage in Flakes
+
+Combine with `mkFlake` for multi-system checks:
+
+```nix flake.nix
+{
+  outputs = { self, nixpkgs, nur }:
+    nur.lib.mkFlake { } (system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+        lib = nur.lib.${system};
+      in
+      {
+        checks = lib.mkChecks {
+          format = {
+            script = ''treefmt --check .'';
+            deps = [ pkgs.treefmt ];
+            root = ./.;
+          };
+
+          build = {
+            src = self.packages.${system}.default;
+            checkPhase = ''echo "Build successful"'';
+          };
+        };
+      }
+    );
+}
+```
+
+Run checks with:
+
+```bash
+nix flake check
+```
+
+## Implementation Details
+
+### Check Phase Generation
+
+The check phase is constructed from:
+
+1. Environment variable exports (`HOME`, `TREEFMT_TREE_ROOT`)
+2. User's `checkPhase`, `script`, or `forEach` script
+3. For `forEach`: Bash loop over all files with globstar
+
+Example generated check phase:
+
+```bash
+export HOME=$(mktemp -d)
+export TREEFMT_TREE_ROOT=$(pwd)
+
+shopt -s globstar
+
+for_each() {
+  local file="$1"
+  shellcheck "$file"
+}
+
+for file in ./**; do
+  if [[ -f "$file" ]]; then
+    echo "Checking $(basename "$file")"
+    for_each "$(realpath "$file")"
+  fi
+done
+
+shopt -u globstar
+```
+
+### Source Location
+
+Implemented in: `libs/mkChecks/default.nix:1`
+
+## Best Practices
+
+1. **Use `root` with filesets**: More efficient than copying entire directories
+2. **Leverage `forEach`**: Easier to debug when checks fail on specific files
+3. **Keep checks fast**: CI runs all checks, so optimize for speed
+4. **Use `deps` not `nativeBuildInputs`**: More concise and clear intent
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="mkApps" icon="rocket" href="/libs/mkApps">
+    Create flake apps with similar simplicity
+  </Card>
+  <Card title="mkFlake" icon="layer-group" href="/libs/mkFlake">
+    Combine with mkFlake for multi-system checks
+  </Card>
+</CardGroup>

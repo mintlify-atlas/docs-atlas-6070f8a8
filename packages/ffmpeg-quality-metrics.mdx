@@ -1,0 +1,114 @@
+---
+title: ffmpeg-quality-metrics
+description: Calculate video quality metrics with FFmpeg (SSIM, PSNR, VMAF, VIF)
+---
+
+[ffmpeg-quality-metrics](https://github.com/slhck/ffmpeg-quality-metrics) calculates video quality metrics using FFmpeg. It supports SSIM, PSNR, VMAF, and VIF metrics for comparing video quality.
+
+## Installation
+
+### Run directly
+
+```bash
+nix run github:spotdemo4/nur#ffmpeg-quality-metrics
+```
+
+### Add to flake
+
+```nix
+devShells.default = pkgs.mkShell {
+  packages = with pkgs.trev; [
+    ffmpeg-quality-metrics
+  ];
+};
+```
+
+## Usage
+
+### Compare two videos
+
+Compare a distorted video against a reference:
+
+```bash
+ffmpeg-quality-metrics reference.mp4 distorted.mp4
+```
+
+### Calculate VMAF score
+
+VMAF (Video Multimethod Assessment Fusion) is a perceptual video quality metric:
+
+```bash
+ffmpeg-quality-metrics reference.mp4 distorted.mp4 -m vmaf
+```
+
+### Calculate multiple metrics
+
+Calculate PSNR, SSIM, and VMAF:
+
+```bash
+ffmpeg-quality-metrics reference.mp4 distorted.mp4 -m psnr ssim vmaf
+```
+
+### Export results to JSON
+
+```bash
+ffmpeg-quality-metrics reference.mp4 distorted.mp4 -of json > metrics.json
+```
+
+## Supported metrics
+
+<Accordion title="PSNR (Peak Signal-to-Noise Ratio)">
+  Measures the ratio between the maximum possible signal power and the power of corrupting noise. Higher values indicate better quality. Typical values range from 30-50 dB.
+</Accordion>
+
+<Accordion title="SSIM (Structural Similarity Index)">
+  Measures the perceived quality based on structural information. Values range from 0 to 1, where 1 indicates perfect similarity.
+</Accordion>
+
+<Accordion title="VMAF (Video Multimethod Assessment Fusion)">
+  Netflix's perceptual video quality metric. Scores range from 0-100, with higher values indicating better quality. Scores above 95 are considered excellent.
+</Accordion>
+
+<Accordion title="VIF (Visual Information Fidelity)">
+  Measures the amount of information that could theoretically be extracted from the reference image. Values range from 0 to 1.
+</Accordion>
+
+## Common use cases
+
+### Evaluate encoding quality
+
+Compare original video with encoded version:
+
+```bash
+ffmpeg-quality-metrics original.mp4 encoded.mp4 -m vmaf psnr
+```
+
+### Test different encoding settings
+
+Batch compare multiple encoded files:
+
+```bash
+for file in encoded_*.mp4; do
+  echo "Testing $file"
+  ffmpeg-quality-metrics original.mp4 "$file" -m vmaf
+done
+```
+
+### Continuous quality monitoring
+
+Integrate into CI/CD pipelines:
+
+```bash
+ffmpeg-quality-metrics reference.mp4 output.mp4 -m vmaf -of json | \
+  jq '.vmaf.mean' | \
+  awk '{if ($1 < 80) exit 1}'
+```
+
+<Tip>
+VMAF scores correlate well with human perception. Target VMAF scores above 80 for good quality, and above 95 for excellent quality.
+</Tip>
+
+## Links
+
+- [GitHub Repository](https://github.com/slhck/ffmpeg-quality-metrics)
+- [VMAF Documentation](https://github.com/Netflix/vmaf)

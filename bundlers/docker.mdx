@@ -1,0 +1,402 @@
+---
+title: Docker Bundlers
+description: Package Nix derivations as Docker container images
+---
+
+The Docker bundlers transform Nix derivations into Docker images using nixpkgs' `dockerTools`. They create minimal, layered images optimized for fast pulls and efficient caching.
+
+## Available Bundlers
+
+| Bundler Name | Output Format | Use Case |
+|--------------|---------------|----------|
+| `docker` | `.tar.gz` archive | Save to file, load later, or distribute |
+| `docker-stream` | Streamed output | Pipe directly to `docker load` |
+
+## How They Work
+
+Both bundlers use `dockerTools.buildLayeredImage` (or `streamLayeredImage`) to:
+
+1. **Layer the image** - Separate dependencies into layers for efficient caching
+2. **Include CA certificates** - Add `dockerTools.caCertificates` for HTTPS support
+3. **Set the command** - Configure the container to run your application by default
+4. **Tag the image** - Use derivation name and version for the image tag
+
+### Implementation
+
+From `bundlers/docker/default.nix:5-17`:
+
+```nix
+pkgs.dockerTools.buildLayeredImage {
+  name = "${drv.pname}";
+  tag = "${drv.version}";
+  created = "now";
+  meta = drv.meta;
+  contents = with pkgs; [
+    dockerTools.caCertificates
+    drv
+  ];
+  config.Cmd = [
+    "${pkgs.lib.meta.getExe drv}"
+  ];
+}
+```
+
+## Basic Usage
+
+### docker Bundler
+
+Creates a `.tar.gz` archive:
+
+```bash
+nix bundle \
+  --bundler github:nurpkgs/nur-nix#docker \
+  .#myapp
+```
+
+**Result**: `/nix/store/...-docker-image-myapp.tar.gz`
+
+**Load into Docker**:
+
+```bash
+docker load < /nix/store/...-docker-image-myapp.tar.gz
+```
+
+### docker-stream Bundler
+
+Streams directly to Docker:
+
+```bash
+nix bundle \
+  --bundler github:nurpkgs/nur-nix#docker-stream \
+  .#myapp | docker load
+```
+
+**Result**: Image loaded directly into Docker daemon
+
+## Complete Workflow
+
+### Build and Run
+
+<Steps>
+  <Step title="Bundle the application">
+    ```bash
+    nix bundle \
+      --bundler github:nurpkgs/nur-nix#docker-stream \
+      .#myapp | docker load
+    ```
+  </Step>
+  
+  <Step title="Verify the image">
+    ```bash
+    docker images | grep myapp
+    ```
+    
+    Output:
+    ```
+    myapp    1.0.0    abc123def456    5 seconds ago    25.3MB
+    ```
+  </Step>
+  
+  <Step title="Run the container">
+    ```bash
+    docker run --rm myapp:1.0.0
+    ```
+  </Step>
+</Steps>
+
+### Save and Distribute
+
+Create a distributable archive:
+
+```bash
+# Build the image
+IMAGE=$(nix bundle \
+  --bundler github:nurpkgs/nur-nix#docker \
+  .#myapp)
+
+# Copy to current directory
+cp "$IMAGE" ./myapp-docker.tar.gz
+
+# Distribute the archive
+# Users can load it with:
+# docker load < myapp-docker.tar.gz
+```
+
+## Image Configuration
+
+### Default Command
+
+The bundler automatically sets the container's default command to your application's main executable:
+
+```nix
+config.Cmd = [
+  "${pkgs.lib.meta.getExe drv}"
+];
+```
+
+**Override at runtime**:
+
+```bash
+docker run --rm myapp:1.0.0 /bin/sh
+```
+
+### Included Contents
+
+Each image includes:
+
+- Your application derivation
+- CA certificates for HTTPS/TLS
+- Minimal dependencies (layered for efficiency)
+
+<Note>
+Images are minimal by design. They don't include a shell or common utilities unless your derivation depends on them.
+</Note>
+
+## Advanced Usage
+
+### Custom Image Configuration
+
+Create a custom bundler with additional configuration:
+
+```nix
+{
+  description = "Custom Docker bundler";
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  };
+
+  outputs = { self, nixpkgs }:
+    let
+      system = "x86_64-linux";
+      pkgs = nixpkgs.legacyPackages.${system};
+    in
+    {
+      bundlers.${system}.docker-custom = drv:
+        pkgs.dockerTools.buildLayeredImage {
+          name = "${drv.pname}";
+          tag = "${drv.version}";
+          created = "now";
+          
+          contents = with pkgs; [
+            dockerTools.caCertificates
+            drv
+            bash  # Add shell
+            coreutils  # Add common utilities
+          ];
+          
+          config = {
+            Cmd = [ "${pkgs.lib.meta.getExe drv}" ];
+            Env = [
+              "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+            ];
+            ExposedPorts = {
+              "8080/tcp" = {};
+            };
+            WorkingDir = "/app";
+          };
+        };
+    };
+}
+```
+
+### Multi-Architecture Images
+
+Build images for different architectures:
+
+```bash
+# Build for x86_64 Linux
+nix bundle \
+  --bundler github:nurpkgs/nur-nix#docker \
+  --system x86_64-linux \
+  .#myapp
+
+# Build for ARM64 Linux
+nix bundle \
+  --bundler github:nurpkgs/nur-nix#docker \
+  --system aarch64-linux \
+  .#myapp
+```
+
+<Warning>
+Cross-architecture builds may require QEMU or platform-specific builders configured in your Nix setup.
+</Warning>
+
+### Image Layers
+
+The `buildLayeredImage` function automatically creates layers:
+
+- **Base layer**: Common dependencies
+- **Dependency layers**: Separated by dependency tree
+- **Application layer**: Your application code
+
+**Benefits**:
+
+- Faster pulls (only changed layers downloaded)
+- Better caching (unchanged layers reused)
+- Smaller total transfer size across multiple images
+
+## Comparison: docker vs docker-stream
+
+| Feature | `docker` | `docker-stream` |
+|---------|----------|----------------|
+| Output | `.tar.gz` file | stdout stream |
+| Storage | Saved to disk | No intermediate file |
+| Use case | Distribute, save for later | Immediate loading |
+| Performance | Slower (disk I/O) | Faster (no disk write) |
+| Shareable | Yes | No |
+
+### When to Use Each
+
+**Use `docker`**:
+
+- Building for distribution
+- Saving images for CI/CD artifacts
+- Archiving images for offline use
+- Sharing images via file transfer
+
+**Use `docker-stream`**:
+
+- Local development
+- Immediate testing
+- CI/CD pipelines (when not archiving)
+- Memory-constrained environments
+
+## Practical Examples
+
+### CI/CD Pipeline
+
+```yaml
+# .github/workflows/docker.yml
+name: Build Docker Image
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - uses: cachix/install-nix-action@v20
+      
+      - name: Build Docker image
+        run: |
+          nix bundle \
+            --bundler github:nurpkgs/nur-nix#docker-stream \
+            .#myapp | docker load
+      
+      - name: Test image
+        run: docker run --rm myapp:1.0.0 --version
+      
+      - name: Push to registry
+        run: |
+          docker tag myapp:1.0.0 ghcr.io/myorg/myapp:1.0.0
+          docker push ghcr.io/myorg/myapp:1.0.0
+```
+
+### Local Development
+
+```bash
+#!/usr/bin/env bash
+set -e
+
+echo "Building Docker image..."
+nix bundle \
+  --bundler github:nurpkgs/nur-nix#docker-stream \
+  .#myapp | docker load
+
+echo "Running container..."
+docker run --rm -p 8080:8080 myapp:1.0.0
+```
+
+### Multi-Stage Build Alternative
+
+Instead of multi-stage Dockerfiles, use Nix:
+
+```nix
+# flake.nix
+{
+  outputs = { self, nixpkgs }:
+    let
+      system = "x86_64-linux";
+      pkgs = nixpkgs.legacyPackages.${system};
+    in
+    {
+      packages.${system}.myapp = pkgs.buildGoModule {
+        name = "myapp";
+        src = ./.;
+        vendorHash = "sha256-...";
+      };
+    };
+}
+```
+
+```bash
+# Single command replaces entire multi-stage Dockerfile
+nix bundle \
+  --bundler github:nurpkgs/nur-nix#docker-stream \
+  .#myapp | docker load
+```
+
+## Troubleshooting
+
+### Image Not Found After Load
+
+```bash
+docker images
+# myapp not listed
+```
+
+**Solution**: Check the image was loaded successfully:
+
+```bash
+nix bundle \
+  --bundler github:nurpkgs/nur-nix#docker-stream \
+  .#myapp 2>&1 | docker load
+```
+
+### Permission Denied
+
+```
+Cannot connect to the Docker daemon
+```
+
+**Solution**: Ensure Docker daemon is running and you have permissions:
+
+```bash
+sudo usermod -aG docker $USER
+newgrp docker
+```
+
+### Large Image Size
+
+Images are larger than expected.
+
+**Solution**: Check what's included:
+
+```bash
+# Load image
+nix bundle \
+  --bundler github:nurpkgs/nur-nix#docker-stream \
+  .#myapp | docker load
+
+# Inspect layers
+docker history myapp:1.0.0
+```
+
+<Tip>
+Nix automatically includes only required dependencies. Large images usually mean your application has large dependencies.
+</Tip>
+
+## Related Topics
+
+<CardGroup cols={2}>
+  <Card title="Deno Bundlers" icon="code" href="/bundlers/deno">
+    Bundle before containerizing
+  </Card>
+  
+  <Card title="Go Bundlers" icon="golang" href="/bundlers/go">
+    Smaller Go binaries for containers
+  </Card>
+</CardGroup>

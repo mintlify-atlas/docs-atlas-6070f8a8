@@ -1,0 +1,202 @@
+---
+title: qsvenc
+description: QSV high-speed encoding performance tool for Intel Quick Sync Video
+---
+
+[qsvenc](https://github.com/rigaya/QSVEnc) is a high-performance video encoder that leverages Intel Quick Sync Video hardware acceleration for fast video encoding.
+
+## Installation
+
+### Run directly
+
+```bash
+nix run github:spotdemo4/nur#qsvenc
+```
+
+### Add to flake
+
+```nix
+devShells.default = pkgs.mkShell {
+  packages = with pkgs.trev; [
+    qsvenc
+  ];
+};
+```
+
+## Usage
+
+### Basic encoding
+
+Encode a video with default settings:
+
+```bash
+qsvenc -i input.mp4 -o output.mp4
+```
+
+### High-quality encoding
+
+Encode with HEVC (H.265) and high quality preset:
+
+```bash
+qsvenc -i input.mp4 -o output.mp4 -c hevc --quality best
+```
+
+### Fast encoding
+
+Prioritize speed over quality:
+
+```bash
+qsvenc -i input.mp4 -o output.mp4 --quality fast
+```
+
+## Codec options
+
+qsvenc supports multiple codecs:
+
+### H.264/AVC
+
+```bash
+qsvenc -i input.mp4 -o output.mp4 -c h264
+```
+
+### HEVC/H.265
+
+```bash
+qsvenc -i input.mp4 -o output.mp4 -c hevc
+```
+
+### VP9
+
+```bash
+qsvenc -i input.mp4 -o output.mp4 -c vp9
+```
+
+### AV1 (on supported hardware)
+
+```bash
+qsvenc -i input.mp4 -o output.mp4 -c av1
+```
+
+## Quality settings
+
+<ParamField path="--quality" type="string">
+  Quality preset: `best`, `higher`, `high`, `balanced`, `fast`, `faster`, `fastest`
+</ParamField>
+
+<ParamField path="--cqp" type="integer">
+  Constant Quality Parameter (0-51, lower is better quality)
+</ParamField>
+
+<ParamField path="--icq" type="integer">
+  Intelligent Constant Quality (1-51, lower is better quality)
+</ParamField>
+
+<ParamField path="--bitrate" type="integer">
+  Target bitrate in Kbps
+</ParamField>
+
+## Advanced features
+
+### Two-pass encoding
+
+Achieve better quality with two-pass encoding:
+
+```bash
+qsvenc -i input.mp4 -o output.mp4 --bitrate 5000 --passes 2
+```
+
+### Hardware decode
+
+Use hardware decoding for the input:
+
+```bash
+qsvenc -i input.mp4 -o output.mp4 --hwdec
+```
+
+### Crop and resize
+
+```bash
+qsvenc -i input.mp4 -o output.mp4 --crop 0,0,1920,1080 --output-res 1280x720
+```
+
+### Add filters
+
+```bash
+qsvenc -i input.mp4 -o output.mp4 --vpp-deinterlace normal --vpp-denoise weak
+```
+
+## Batch encoding
+
+Encode multiple files:
+
+```bash
+for file in *.mp4; do
+  qsvenc -i "$file" -o "encoded_${file}" -c hevc --quality high
+done
+```
+
+## Performance comparison
+
+| Encoder | Speed (fps) | Quality | Power Usage |
+|---------|-------------|---------|-------------|
+| qsvenc (QSV) | 300-500 | Good | Low |
+| x264 (CPU) | 30-60 | Excellent | High |
+| x265 (CPU) | 10-20 | Excellent | High |
+| nvenc (NVIDIA) | 400-600 | Good | Medium |
+
+<Note>
+Performance varies based on CPU generation and model. Newer Intel CPUs with newer Quick Sync Video versions provide better quality and performance.
+</Note>
+
+## Hardware requirements
+
+qsvenc requires:
+
+- Intel CPU with Quick Sync Video support (2nd gen Core or newer)
+- Intel graphics drivers
+- `/dev/dri/renderD128` device access
+
+### Check QSV availability
+
+```bash
+qsvenc --check-hw
+```
+
+## Use cases
+
+<Accordion title="Live streaming encoding">
+  qsvenc can encode live streams with low latency:
+  
+  ```bash
+  qsvenc -i input.ts -o output.ts -c h264 --tune 1 --low-latency
+  ```
+</Accordion>
+
+<Accordion title="Archive encoding">
+  High-quality archival with HEVC:
+  
+  ```bash
+  qsvenc -i source.mov -o archive.mp4 -c hevc --quality best --icq 18
+  ```
+</Accordion>
+
+<Accordion title="Preview generation">
+  Fast preview encoding:
+  
+  ```bash
+  qsvenc -i input.mp4 -o preview.mp4 --quality fastest --bitrate 1000
+  ```
+</Accordion>
+
+<Tip>
+For the best quality/speed balance, use `--quality high` with `--icq 23` for HEVC encoding.
+</Tip>
+
+<Warning>
+QSV requires access to Intel GPU hardware. It will not work in containers or VMs without proper device passthrough.
+</Warning>
+
+## Links
+
+- [GitHub Repository](https://github.com/rigaya/QSVEnc)
+- [Intel Quick Sync Video](https://www.intel.com/content/www/us/en/architecture-and-technology/quick-sync-video/quick-sync-video-general.html)

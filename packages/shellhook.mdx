@@ -1,0 +1,199 @@
+---
+title: shellhook
+description: Shell hook for Nix development environments
+---
+
+shellhook is a utility for Nix development shells that displays environment information and creates a pre-push git hook to run `nix flake check`.
+
+## Installation
+
+### Add to your flake
+
+```nix
+devShells.default = pkgs.mkShell {
+  shellHook = pkgs.trev.shellhook.ref;
+};
+```
+
+### Complete example
+
+```nix flake.nix
+{
+  inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
+    trev = {
+      url = "github:spotdemo4/nur";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
+
+  outputs = { nixpkgs, trev, ... }:
+    trev.libs.mkFlake (system:
+      let
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [
+            trev.overlays.packages
+            trev.overlays.libs
+          ];
+        };
+      in
+      {
+        devShells.default = pkgs.mkShell {
+          packages = with pkgs; [
+            nixfmt
+            prettier
+          ];
+          shellHook = pkgs.trev.shellhook.ref;
+        };
+      }
+    );
+}
+```
+
+## Features
+
+### Environment information
+
+When entering a development shell, shellhook displays:
+
+- Current Nix version
+- Available packages in the shell
+- Active overlays
+- Environment variables
+- Git repository status
+
+### Pre-push git hook
+
+Automatically creates a `.git/hooks/pre-push` hook that:
+
+1. Runs `nix flake check` before pushing
+2. Prevents pushes if checks fail
+3. Ensures code quality and build success
+
+### Example output
+
+When entering the dev shell:
+
+```
+🔨 Nix Development Shell
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Nix version: 2.18.1
+System: x86_64-linux
+
+Packages:
+  • nixfmt-rfc-style 0.5.0
+  • prettier 3.1.0
+
+Pre-push hook installed ✓
+Run 'nix flake check' before pushing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+## Pre-push hook behavior
+
+### Automatic installation
+
+The hook is created automatically when entering the dev shell. If a hook already exists, it's backed up to `.git/hooks/pre-push.backup`.
+
+### Hook execution
+
+When you run `git push`, the hook:
+
+```bash
+#!/usr/bin/env bash
+set -e
+
+echo "Running nix flake check..."
+nix flake check
+
+if [ $? -ne 0 ]; then
+  echo "❌ Flake checks failed. Push aborted."
+  exit 1
+fi
+
+echo "✓ All checks passed"
+```
+
+### Skip the hook
+
+To bypass the pre-push check when needed:
+
+```bash
+git push --no-verify
+```
+
+<Warning>
+Only use `--no-verify` when absolutely necessary. The pre-push hook prevents broken code from reaching your repository.
+</Warning>
+
+## Customization
+
+### Combine with other hooks
+
+Add your own shell initialization:
+
+```nix
+devShells.default = pkgs.mkShell {
+  shellHook = ''
+    ${pkgs.trev.shellhook.ref}
+    
+    # Your custom initialization
+    echo "Welcome to my project!"
+    export PROJECT_ROOT=$(pwd)
+  '';
+};
+```
+
+### Disable pre-push hook
+
+If you only want the environment info without the git hook:
+
+```nix
+devShells.default = pkgs.mkShell {
+  shellHook = ''
+    ${pkgs.trev.shellhook.ref}
+    rm -f .git/hooks/pre-push
+  '';
+};
+```
+
+## Use with direnv
+
+Combine with direnv for automatic shell activation:
+
+```bash .envrc
+use flake
+```
+
+When you `cd` into the project directory, direnv automatically loads the dev shell with shellhook.
+
+## Benefits
+
+<CardGroup cols={2}>
+  <Card title="Quality assurance" icon="shield-check">
+    Prevent broken code from being pushed to your repository
+  </Card>
+  <Card title="Environment visibility" icon="eye">
+    See exactly what's available in your development environment
+  </Card>
+  <Card title="Team consistency" icon="users">
+    Ensure all developers run the same checks before pushing
+  </Card>
+  <Card title="Early detection" icon="magnifying-glass">
+    Catch build failures before they reach CI/CD
+  </Card>
+</CardGroup>
+
+## Source code
+
+View the shellhook implementation: [pkgs/shellhook/shellhook.sh](https://github.com/spotdemo4/nur/blob/main/pkgs/shellhook/shellhook.sh)
+
+<Tip>
+Use shellhook in all your Nix projects to maintain consistent development practices and catch issues early.
+</Tip>
+
+## Links
+
+- [Source Code](https://github.com/spotdemo4/nur/blob/main/pkgs/shellhook/shellhook.sh)
+- [Git Hooks Documentation](https://git-scm.com/docs/githooks)

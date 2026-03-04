@@ -1,0 +1,209 @@
+---
+title: Welcome to Nur Nix
+description: Extra packages, bundlers and libraries for Nix with automated caching
+mode: custom
+---
+
+<div className="relative isolate overflow-hidden dark:bg-[#0f1117] bg-white">
+  <div className="py-20 sm:py-24 lg:py-32">
+    <div className="mx-auto max-w-7xl px-6 lg:px-8">
+      <div className="mx-auto max-w-2xl text-center">
+        <h1 className="text-4xl font-bold tracking-tight dark:text-white text-gray-900 sm:text-6xl">
+          Extra packages, bundlers and libraries for Nix
+        </h1>
+        <p className="mt-6 text-lg leading-8 dark:text-gray-400 text-gray-600 max-w-2xl mx-auto">
+          A curated collection of Nix packages with automatic updates, cross-compilation bundlers, and utility libraries for flake development. All packages are cached and kept up-to-date automatically.
+        </p>
+        <div className="mt-10 flex items-center justify-center gap-4 flex-wrap">
+          <a
+            href="/installation"
+            className="rounded-lg bg-[#5375c4] px-6 py-3 text-base font-semibold text-white shadow-sm hover:bg-[#84c1ec] transition-colors no-underline"
+          >
+            Get started
+          </a>
+          <a
+            href="/packages/overview"
+            className="rounded-lg border border-white/30 bg-white/10 dark:border-white/30 dark:bg-white/10 px-6 py-3 text-base font-semibold dark:text-white text-gray-900 hover:bg-white/20 dark:hover:bg-white/20 transition-colors no-underline"
+          >
+            Explore packages
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl font-bold dark:text-white text-gray-900">Quick start</h2>
+    <p className="mt-4 text-base dark:text-gray-400 text-gray-600">
+      Get up and running with Nur Nix in minutes
+    </p>
+  </div>
+
+  <Steps>
+    <Step title="Add the flake input">
+      Add Nur Nix to your flake inputs with the binary cache configuration:
+
+      ```nix flake.nix
+      {
+        nixConfig = {
+          extra-substituters = [
+            "https://nix.trev.zip"
+          ];
+          extra-trusted-public-keys = [
+            "trev:I39N/EsnHkvfmsbx8RUW+ia5dOzojTQNCTzKYij1chU="
+          ];
+        };
+
+        inputs = {
+          systems.url = "github:nix-systems/default";
+          nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
+          trev = {
+            url = "github:spotdemo4/nur";
+            inputs.systems.follows = "systems";
+            inputs.nixpkgs.follows = "nixpkgs";
+          };
+        };
+      }
+      ```
+    </Step>
+
+    <Step title="Configure overlays">
+      Add the overlays to your pkgs configuration to access packages and libraries:
+
+      ```nix flake.nix
+      outputs = { nixpkgs, trev, ... }:
+        trev.libs.mkFlake (system:
+          let
+            pkgs = import nixpkgs {
+              inherit system;
+              overlays = [
+                trev.overlays.packages
+                trev.overlays.libs
+              ];
+            };
+          in
+          {
+            # Your flake outputs here
+          }
+        );
+      ```
+    </Step>
+
+    <Step title="Use packages and utilities">
+      Now you can use any package or utility from the repository:
+
+      ```nix
+      devShells.default = pkgs.mkShell {
+        packages = with pkgs; [
+          trev.bobgen
+          trev.bumper
+        ];
+        shellHook = pkgs.shellhook.ref;
+      };
+      ```
+
+      Or run packages directly without installation:
+
+      ```bash
+      nix run github:spotdemo4/nur#bumper
+      ```
+    </Step>
+  </Steps>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl font-bold dark:text-white text-gray-900">Explore by category</h2>
+    <p className="mt-4 text-base dark:text-gray-400 text-gray-600">
+      Discover the tools and utilities available in Nur Nix
+    </p>
+  </div>
+
+  <CardGroup cols={2}>
+    <Card title="Packages" icon="box" href="/packages/overview">
+      Curated collection of Nix packages including development tools, security scanners, and productivity utilities
+    </Card>
+    <Card title="Bundlers" icon="box-archive" href="/bundlers/overview">
+      Cross-compilation bundlers for Deno, Go, and Docker with support for multiple target systems
+    </Card>
+    <Card title="Libraries" icon="book-bookmark" href="/libs/overview">
+      Utility libraries for flake development including mkFlake, mkChecks, and mkApps
+    </Card>
+    <Card title="Container Images" icon="docker" href="/images/overview">
+      Pre-built container images for FFmpeg and Nix optimized for common workflows
+    </Card>
+  </CardGroup>
+</div>
+
+<div className="mt-16 mb-16 max-w-5xl mx-auto px-6">
+  <div className="text-center mb-12">
+    <h2 className="text-3xl font-bold dark:text-white text-gray-900">Key features</h2>
+    <p className="mt-4 text-base dark:text-gray-400 text-gray-600">
+      What makes Nur Nix different
+    </p>
+  </div>
+
+  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div className="dark:bg-[#1a1d27] bg-gray-50 rounded-xl p-6 border dark:border-[#27272a] border-gray-200">
+      <div className="text-2xl mb-3">🔄</div>
+      <h3 className="text-lg font-semibold dark:text-white text-gray-900 mb-2">Automatic updates</h3>
+      <p className="text-sm dark:text-gray-400 text-gray-600">
+        Packages are kept up-to-date automatically with continuous integration checks
+      </p>
+    </div>
+    <div className="dark:bg-[#1a1d27] bg-gray-50 rounded-xl p-6 border dark:border-[#27272a] border-gray-200">
+      <div className="text-2xl mb-3">⚡</div>
+      <h3 className="text-lg font-semibold dark:text-white text-gray-900 mb-2">Binary caching</h3>
+      <p className="text-sm dark:text-gray-400 text-gray-600">
+        All packages are pre-built and cached for instant installation without compilation
+      </p>
+    </div>
+    <div className="dark:bg-[#1a1d27] bg-gray-50 rounded-xl p-6 border dark:border-[#27272a] border-gray-200">
+      <div className="text-2xl mb-3">🔨</div>
+      <h3 className="text-lg font-semibold dark:text-white text-gray-900 mb-2">Cross-compilation</h3>
+      <p className="text-sm dark:text-gray-400 text-gray-600">
+        Bundlers support multiple target systems for easy cross-platform builds
+      </p>
+    </div>
+    <div className="dark:bg-[#1a1d27] bg-gray-50 rounded-xl p-6 border dark:border-[#27272a] border-gray-200">
+      <div className="text-2xl mb-3">📦</div>
+      <h3 className="text-lg font-semibold dark:text-white text-gray-900 mb-2">NUR integration</h3>
+      <p className="text-sm dark:text-gray-400 text-gray-600">
+        Available through the Nix User Repository for easy community access
+      </p>
+    </div>
+    <div className="dark:bg-[#1a1d27] bg-gray-50 rounded-xl p-6 border dark:border-[#27272a] border-gray-200">
+      <div className="text-2xl mb-3">🛠️</div>
+      <h3 className="text-lg font-semibold dark:text-white text-gray-900 mb-2">Utility libraries</h3>
+      <p className="text-sm dark:text-gray-400 text-gray-600">
+        Helper functions to simplify flake development and reduce boilerplate
+      </p>
+    </div>
+    <div className="dark:bg-[#1a1d27] bg-gray-50 rounded-xl p-6 border dark:border-[#27272a] border-gray-200">
+      <div className="text-2xl mb-3">🐚</div>
+      <h3 className="text-lg font-semibold dark:text-white text-gray-900 mb-2">Development hooks</h3>
+      <p className="text-sm dark:text-gray-400 text-gray-600">
+        Shell hooks and utilities to enhance your Nix development workflow
+      </p>
+    </div>
+  </div>
+</div>
+
+<div className="mt-20 mb-16 max-w-5xl mx-auto px-6">
+  <div className="dark:bg-[#1a1d27] bg-gray-50 rounded-2xl p-8 md:p-12 border dark:border-[#27272a] border-gray-200 text-center">
+    <h2 className="text-2xl md:text-3xl font-bold dark:text-white text-gray-900 mb-4">
+      Ready to get started?
+    </h2>
+    <p className="text-base dark:text-gray-400 text-gray-600 mb-8 max-w-2xl mx-auto">
+      Add Nur Nix to your project and start using curated packages, bundlers, and utilities today.
+    </p>
+    <a
+      href="/installation"
+      className="inline-block rounded-lg bg-[#5375c4] px-8 py-3 text-base font-semibold text-white shadow-sm hover:bg-[#84c1ec] transition-colors no-underline"
+    >
+      View installation guide
+    </a>
+  </div>
+</div>

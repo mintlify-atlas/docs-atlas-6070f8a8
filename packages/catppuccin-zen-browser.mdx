@@ -1,0 +1,85 @@
+---
+title: catppuccin-zen-browser
+description: Catppuccin theme for Zen Browser
+---
+
+The [Catppuccin theme for Zen Browser](https://github.com/catppuccin/zen-browser) provides soothing pastel colors for the Zen Browser interface.
+
+## Installation
+
+This package is designed to be used with the [`0xc000022070/zen-browser-flake`](https://github.com/0xc000022070/zen-browser-flake).
+
+### Add to your flake
+
+First, add both flakes to your inputs:
+
+```nix
+inputs = {
+  zen-browser.url = "github:0xc000022070/zen-browser-flake";
+  trev = {
+    url = "github:spotdemo4/nur";
+    inputs.nixpkgs.follows = "nixpkgs";
+  };
+};
+```
+
+### Configure Zen Browser profile
+
+Apply the Catppuccin theme to your Zen Browser profile:
+
+```nix
+programs.zen-browser.profiles.default = {
+  userChrome = builtins.readFile "${pkgs.trev.catppuccin-zen-browser}/Mocha/Sky/userChrome.css";
+  userContent = builtins.readFile "${pkgs.trev.catppuccin-zen-browser}/Mocha/Sky/userContent.css";
+};
+```
+
+## Available variants
+
+The Catppuccin theme includes multiple color variants:
+
+### Mocha (dark)
+
+The Mocha variant includes several accent colors:
+- **Rosewater**
+- **Flamingo**
+- **Pink**
+- **Mauve**
+- **Red**
+- **Maroon**
+- **Peach**
+- **Yellow**
+- **Green**
+- **Teal**
+- **Sky**
+- **Sapphire**
+- **Blue**
+- **Lavender**
+
+### Choose a different accent
+
+Replace `Sky` with any of the accent colors:
+
+```nix
+programs.zen-browser.profiles.default = {
+  userChrome = builtins.readFile "${pkgs.trev.catppuccin-zen-browser}/Mocha/Lavender/userChrome.css";
+  userContent = builtins.readFile "${pkgs.trev.catppuccin-zen-browser}/Mocha/Lavender/userContent.css";
+};
+```
+
+## Theme features
+
+- **Consistent colors**: Matches the Catppuccin color palette
+- **Eye-friendly**: Soothing pastel colors reduce eye strain
+- **Multiple variants**: Choose from 14 different accent colors
+- **Complete coverage**: Themes both browser UI and web content
+
+<Note>
+The theme files are split into `userChrome.css` (browser UI) and `userContent.css` (web pages). Both must be loaded for complete theming.
+</Note>
+
+## Links
+
+- [Catppuccin Zen Browser GitHub](https://github.com/catppuccin/zen-browser)
+- [Catppuccin Color Palette](https://github.com/catppuccin/catppuccin)
+- [Zen Browser Flake](https://github.com/0xc000022070/zen-browser-flake)

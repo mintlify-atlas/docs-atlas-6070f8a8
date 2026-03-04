@@ -1,0 +1,363 @@
+---
+title: Deno Utilities
+description: Compile TypeScript and JavaScript projects to standalone binaries with Deno
+---
+
+`deno.compile` transforms Deno projects into standalone executables for multiple platforms using `deno compile`.
+
+## Overview
+
+Take a TypeScript/JavaScript project and compile it to a native binary:
+
+```nix
+packages.myapp = lib.deno.compile {
+  package = pkgs.buildNpmPackage {
+    pname = "myapp";
+    version = "1.0.0";
+    src = ./.;
+    npmDepsHash = "sha256-...";
+  };
+  target = "x86_64-unknown-linux-gnu";
+  entrypoint = "src/main.ts";
+};
+```
+
+## Function Signature
+
+```nix
+deno.compile :: {
+  package,
+  target?,
+  entrypoint?,
+  allow-read?,
+  allow-write?,
+  allow-net?,
+  allow-env?,
+  allow-run?,
+  ...
+} -> Derivation
+```
+
+<ParamField path="package" type="derivation" required>
+  A package built with `buildNpmPackage`, `stdenv.mkDerivation`, or similar. Should contain your TypeScript/JavaScript source.
+</ParamField>
+
+<ParamField path="target" type="string" default='"x86_64-unknown-linux-gnu"'>
+  Target platform triple. Supported targets:
+  - `"x86_64-unknown-linux-gnu"`
+  - `"aarch64-unknown-linux-gnu"`
+  - `"x86_64-apple-darwin"`
+  - `"aarch64-apple-darwin"`
+  - `"x86_64-pc-windows-msvc"`
+</ParamField>
+
+<ParamField path="entrypoint" type="string" default="auto-detected">
+  Path to the entry file. If not specified, tries:
+  1. `package.json` `"main"` field
+  2. `build/index.js`
+  3. Fails if none found
+</ParamField>
+
+<ParamField path="allow-read" type="boolean" default={true}>
+  Allow file system read access.
+</ParamField>
+
+<ParamField path="allow-write" type="boolean" default={true}>
+  Allow file system write access.
+</ParamField>
+
+<ParamField path="allow-net" type="boolean" default={true}>
+  Allow network access.
+</ParamField>
+
+<ParamField path="allow-env" type="boolean" default={true}>
+  Allow environment variable access.
+</ParamField>
+
+<ParamField path="allow-run" type="boolean" default={true}>
+  Allow running subprocesses.
+</ParamField>
+
+## Return Value
+
+Returns a modified derivation with:
+
+- Compiled binary in `$out/bin/<name>`
+- `.exe` extension for Windows targets
+- `meta.mainProgram` set correctly
+- `doCheck = false` (tests disabled)
+
+## Examples
+
+### Basic Compilation
+
+```nix
+let
+  myapp = pkgs.buildNpmPackage {
+    pname = "myapp";
+    version = "1.0.0";
+    src = ./.;
+    npmDepsHash = "sha256-...";
+  };
+in
+{
+  packages.default = lib.deno.compile {
+    package = myapp;
+  };
+}
+```
+
+### Cross-Compile to Windows
+
+```nix
+packages.myapp-windows = lib.deno.compile {
+  package = pkgs.buildNpmPackage { /* ... */ };
+  target = "x86_64-pc-windows-msvc";
+  entrypoint = "src/main.ts";
+};
+```
+
+### Multi-Platform Builds
+
+```nix flake.nix
+{
+  outputs = { self, nixpkgs, nur }:
+    nur.lib.mkFlake { } (system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+        lib = nur.lib.${system};
+
+        myapp = pkgs.buildNpmPackage {
+          pname = "myapp";
+          version = "1.0.0";
+          src = ./.;
+          npmDepsHash = "sha256-...";
+        };
+      in
+      {
+        packages = {
+          default = myapp;
+
+          # Linux
+          linux-x64 = lib.deno.compile {
+            package = myapp;
+            target = "x86_64-unknown-linux-gnu";
+          };
+
+          linux-arm64 = lib.deno.compile {
+            package = myapp;
+            target = "aarch64-unknown-linux-gnu";
+          };
+
+          # macOS
+          macos-x64 = lib.deno.compile {
+            package = myapp;
+            target = "x86_64-apple-darwin";
+          };
+
+          macos-arm64 = lib.deno.compile {
+            package = myapp;
+            target = "aarch64-apple-darwin";
+          };
+
+          # Windows
+          windows = lib.deno.compile {
+            package = myapp;
+            target = "x86_64-pc-windows-msvc";
+          };
+        };
+      }
+    );
+}
+```
+
+### Restricted Permissions
+
+For security-sensitive apps, restrict permissions:
+
+```nix
+packages.secure-app = lib.deno.compile {
+  package = myapp;
+  # Deny everything by default
+  allow-read = false;
+  allow-write = false;
+  allow-net = false;
+  allow-env = false;
+  allow-run = false;
+};
+```
+
+### Custom Entrypoint
+
+```nix
+packages.cli = lib.deno.compile {
+  package = pkgs.buildNpmPackage { /* ... */ };
+  entrypoint = "cli/index.ts";
+  allow-net = false; # CLI doesn't need network
+};
+```
+
+### With Override
+
+Since `compile` uses `lib.makeOverridable`:
+
+```nix
+let
+  baseCompile = lib.deno.compile {
+    package = myapp;
+  };
+in
+{
+  # Override target
+  packages.macos = baseCompile.override {
+    target = "aarch64-apple-darwin";
+  };
+}
+```
+
+## Supported Targets
+
+Deno runtime binaries (denort) are bundled for these platforms:
+
+| Target | OS | Architecture |
+|--------|----|--------------|
+| `x86_64-unknown-linux-gnu` | Linux | x86_64 |
+| `aarch64-unknown-linux-gnu` | Linux | ARM64 |
+| `x86_64-apple-darwin` | macOS | Intel |
+| `aarch64-apple-darwin` | macOS | Apple Silicon |
+| `x86_64-pc-windows-msvc` | Windows | x86_64 |
+
+All targets use Deno v2.6.5 runtime.
+
+## Implementation Details
+
+### Entrypoint Detection
+
+The entrypoint is determined by this priority:
+
+1. Explicit `entrypoint` parameter
+2. `package.json` `"main"` field (via `jq`)
+3. `build/index.js` (common build output)
+4. Error if none found
+
+```bash
+if [[ -n "${entrypoint}" ]]; then
+  ENTRYPOINT="${entrypoint}"
+elif jq -e 'has("main")' package.json; then
+  ENTRYPOINT=$(jq -r '.main' package.json)
+elif [[ -f build/index.js ]]; then
+  ENTRYPOINT="build/index.js"
+else
+  echo "Could not determine entrypoint. Please specify it explicitly."
+  exit 1
+fi
+```
+
+### denort Installation
+
+The `denort` (Deno runtime) binary is pre-fetched for each target and installed into Deno's cache:
+
+```nix
+mkdir -p "$DENO_DIR/dl/release/v${deno.version}"
+cp ${denort."${target}"} "$DENO_DIR/dl/release/v${deno.version}/denort-${target}.zip"
+```
+
+This avoids network access during build.
+
+### Compilation Command
+
+The actual compilation:
+
+```bash
+deno compile \
+  --no-check \
+  ${if allow-read then "--allow-read" else "--deny-read"} \
+  ${if allow-write then "--allow-write" else "--deny-write"} \
+  ${if allow-net then "--allow-net" else "--deny-net"} \
+  ${if allow-env then "--allow-env" else "--deny-env"} \
+  ${if allow-run then "--allow-run" else "--deny-run"} \
+  --target ${target} \
+  --output "$out/bin/${bin}" "$ENTRYPOINT"
+```
+
+### Source Location
+
+Implemented in: `libs/deno/compile.nix:8`
+
+## Common Patterns
+
+### CLI Tool Distribution
+
+```nix
+{
+  packages = {
+    # Native build for development
+    default = myCliTool;
+
+    # Release builds for distribution
+    cli-linux = lib.deno.compile {
+      package = myCliTool;
+      target = "x86_64-unknown-linux-gnu";
+    };
+
+    cli-macos = lib.deno.compile {
+      package = myCliTool;
+      target = "aarch64-apple-darwin";
+    };
+
+    cli-windows = lib.deno.compile {
+      package = myCliTool;
+      target = "x86_64-pc-windows-msvc";
+    };
+  };
+
+  apps.release = lib.mkApps {
+    script = ''
+      nix build .#cli-linux
+      nix build .#cli-macos  
+      nix build .#cli-windows
+      
+      tar czf dist/cli-linux.tar.gz -C result/bin .
+      tar czf dist/cli-macos.tar.gz -C result/bin .
+      zip dist/cli-windows.zip -j result/bin/*.exe
+    '';
+    deps = [ pkgs.nix pkgs.gnutar pkgs.gzip pkgs.zip ];
+  };
+}
+```
+
+### TypeScript Server
+
+```nix
+packages.server = lib.deno.compile {
+  package = pkgs.buildNpmPackage {
+    pname = "my-server";
+    src = ./.;
+    npmDepsHash = "sha256-...";
+  };
+  entrypoint = "src/server.ts";
+  allow-net = true;
+  allow-env = true;
+  allow-read = true;
+  allow-write = false; # Server doesn't write files
+  allow-run = false;   # Server doesn't spawn processes
+};
+```
+
+## Best Practices
+
+1. **Specify permissions explicitly**: Don't rely on defaults for production
+2. **Test binaries on target platforms**: Cross-compiled binaries should be tested
+3. **Use explicit entrypoints**: Reduces build-time guesswork
+4. **Keep binaries small**: Deno includes the full runtime, but tree-shaking helps
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Go Utilities" icon="golang" href="/libs/go">
+    Cross-compile Go applications
+  </Card>
+  <Card title="Rust Utilities" icon="rust" href="/libs/rust">
+    Cross-compile Rust with cargo-zigbuild
+  </Card>
+</CardGroup>

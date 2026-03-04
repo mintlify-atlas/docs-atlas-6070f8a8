@@ -1,0 +1,81 @@
+---
+title: bobgen
+description: SQL query builder and ORM/Factory generator for Go
+---
+
+[bob](https://github.com/stephenafamo/bob) is a SQL query builder and ORM/Factory generator for Go with a focus on code generation and type safety.
+
+## Installation
+
+### Run directly
+
+```bash
+nix run github:spotdemo4/nur#bobgen
+```
+
+### Add to flake
+
+```nix
+devShells.default = pkgs.mkShell {
+  packages = with pkgs.trev; [
+    bobgen
+  ];
+};
+```
+
+### NixOS configuration
+
+```nix
+environment.systemPackages = [
+  pkgs.trev.bobgen
+];
+```
+
+## Usage
+
+Generate Go code from your database schema:
+
+```bash
+bobgen psql
+```
+
+### Configuration example
+
+Create a `bobgen.yaml` configuration file:
+
+```yaml
+output: "models"
+pkgname: "models"
+wipe: true
+no-tests: false
+
+postgres:
+  dsn: "host=localhost user=postgres dbname=mydb"
+  schemas:
+    - public
+```
+
+Run the generator:
+
+```bash
+bobgen psql -c bobgen.yaml
+```
+
+## Features
+
+- **Type-safe queries**: Generate type-safe Go code from your schema
+- **Multiple databases**: Support for PostgreSQL, MySQL, and SQLite
+- **Factory generation**: Create test factories automatically
+- **Query builder**: Fluent API for building complex queries
+- **Code generation**: Generate models, queries, and factories
+
+## Status
+
+<Note>
+This package is pending inclusion in nixpkgs: [NixOS/nixpkgs#420450](https://github.com/NixOS/nixpkgs/pull/420450)
+</Note>
+
+## Links
+
+- [GitHub Repository](https://github.com/stephenafamo/bob)
+- [Documentation](https://bob.stephenafamo.com/)

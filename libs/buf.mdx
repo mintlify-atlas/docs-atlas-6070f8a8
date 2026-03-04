@@ -1,0 +1,345 @@
+---
+title: Buf Utilities
+description: Fetch and manage Buf protocol buffer dependencies in Nix builds
+---
+
+The Buf utilities provide `fetchDeps` and `configHook` for managing protocol buffer dependencies with the Buf tool in Nix builds.
+
+## Overview
+
+Buf is a modern tool for working with Protocol Buffers. These utilities help you:
+
+1. Fetch Buf dependencies into the Nix store
+2. Configure builds to use those cached dependencies
+
+```nix
+let
+  bufDeps = lib.buf.fetchDeps {
+    pname = "my-proto";
+    src = ./.;
+    hash = "sha256-...";
+  };
+in
+pkgs.stdenv.mkDerivation {
+  pname = "my-proto";
+  src = ./.;
+  nativeBuildInputs = [
+    pkgs.buf
+    lib.buf.configHook
+  ];
+  inherit bufDeps;
+}
+```
+
+## buf.fetchDeps
+
+Fetches Buf dependencies based on `buf.yaml` configuration.
+
+### Function Signature
+
+```nix
+buf.fetchDeps :: { pname, src?, hash?, buf?, ... } -> Derivation
+```
+
+<ParamField path="pname" type="string" required>
+  Package name. Used to create the derivation name as `${pname}-buf-deps`.
+</ParamField>
+
+<ParamField path="hash" type="string">
+  Expected hash of the dependency tree. Use empty string `""` to get the actual hash on first build.
+</ParamField>
+
+<ParamField path="src" type="path">
+  Source directory containing `buf.yaml`. Defaults to current directory.
+</ParamField>
+
+<ParamField path="buf" type="derivation">
+  Buf package to use. Defaults to `pkgs.buf`.
+</ParamField>
+
+### Return Value
+
+Returns a fixed-output derivation containing the Buf cache directory with all dependencies fetched.
+
+### Examples
+
+#### Basic Usage
+
+```nix
+let
+  bufDeps = lib.buf.fetchDeps {
+    pname = "my-service";
+    src = ./.;
+    # Leave empty on first build to get the hash
+    hash = "";
+  };
+in
+bufDeps
+
+# First build will fail with:
+# error: hash mismatch in fixed-output derivation
+# specified: sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+# got:       sha256-xyz123...
+
+# Update with the correct hash:
+let
+  bufDeps = lib.buf.fetchDeps {
+    pname = "my-service";
+    src = ./.;
+    hash = "sha256-xyz123...";
+  };
+in
+bufDeps
+```
+
+#### Custom Buf Version
+
+```nix
+lib.buf.fetchDeps {
+  pname = "my-proto";
+  src = ./.;
+  buf = pkgs.buf.overrideAttrs (old: {
+    version = "1.28.0";
+    # ...
+  });
+  hash = "sha256-...";
+}
+```
+
+## buf.configHook
+
+A setup hook that configures the Buf cache directory to use pre-fetched dependencies.
+
+### Usage
+
+```nix
+pkgs.stdenv.mkDerivation {
+  pname = "my-proto";
+  src = ./.;
+
+  nativeBuildInputs = [
+    pkgs.buf
+    lib.buf.configHook
+  ];
+
+  # Required: point to fetched dependencies
+  bufDeps = lib.buf.fetchDeps {
+    pname = "my-proto";
+    src = ./.;
+    hash = "sha256-...";
+  };
+
+  buildPhase = ''
+    buf generate
+  '';
+}
+```
+
+### Configuration
+
+<ParamField path="bufDeps" type="derivation" required>
+  Output of `buf.fetchDeps`. The hook will fail if this is not set.
+</ParamField>
+
+<ParamField path="bufRoot" type="path">
+  Directory to change to before running buf commands. Useful if your `buf.yaml` is in a subdirectory.
+</ParamField>
+
+### What It Does
+
+1. Creates a temporary `HOME` directory
+2. Copies `bufDeps` to a writable location
+3. Sets `BUF_CACHE_DIR` to point to the dependencies
+4. Runs `buf dep graph` to verify dependencies are accessible
+
+This ensures all `buf` commands use the pre-fetched, cached dependencies instead of trying to download them.
+
+## Complete Example
+
+### Project Structure
+
+```
+my-proto/
+├── buf.yaml
+├── buf.gen.yaml
+├── proto/
+│   └── my/
+│       └── service/
+│           └── v1/
+│               └── service.proto
+└── flake.nix
+```
+
+### buf.yaml
+
+```yaml
+version: v1
+deps:
+  - buf.build/googleapis/googleapis
+  - buf.build/grpc-ecosystem/grpc-gateway
+breaking:
+  use:
+    - FILE
+lint:
+  use:
+    - DEFAULT
+```
+
+### flake.nix
+
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    nur.url = "github:your-org/nur-nix";
+  };
+
+  outputs = { self, nixpkgs, nur }:
+    nur.lib.mkFlake { } (system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+        lib = nur.lib.${system};
+
+        # Fetch dependencies once
+        bufDeps = lib.buf.fetchDeps {
+          pname = "my-proto";
+          src = ./.;
+          hash = "sha256-abc123..."; # Update after first build
+        };
+      in
+      {
+        packages.default = pkgs.stdenv.mkDerivation {
+          pname = "my-proto";
+          version = "1.0.0";
+          src = ./.;
+
+          nativeBuildInputs = [
+            pkgs.buf
+            pkgs.protobuf
+            lib.buf.configHook
+          ];
+
+          inherit bufDeps;
+
+          buildPhase = ''
+            # Generate code from .proto files
+            buf generate
+          '';
+
+          installPhase = ''
+            mkdir -p $out
+            cp -r gen/* $out/
+          '';
+        };
+
+        # Also provide the fetched deps as a package
+        packages.buf-deps = bufDeps;
+      }
+    );
+}
+```
+
+## Multi-Module Setup
+
+If you have multiple Buf modules:
+
+```nix
+let
+  # Fetch deps for service A
+  serviceADeps = lib.buf.fetchDeps {
+    pname = "service-a";
+    src = ./services/a;
+    hash = "sha256-...";
+  };
+
+  # Fetch deps for service B
+  serviceBDeps = lib.buf.fetchDeps {
+    pname = "service-b";
+    src = ./services/b;
+    hash = "sha256-...";
+  };
+in
+{
+  packages = {
+    service-a = pkgs.stdenv.mkDerivation {
+      pname = "service-a";
+      src = ./services/a;
+      nativeBuildInputs = [ pkgs.buf lib.buf.configHook ];
+      bufDeps = serviceADeps;
+      # ...
+    };
+
+    service-b = pkgs.stdenv.mkDerivation {
+      pname = "service-b";
+      src = ./services/b;
+      nativeBuildInputs = [ pkgs.buf lib.buf.configHook ];
+      bufDeps = serviceBDeps;
+      # ...
+    };
+  };
+}
+```
+
+## Implementation Details
+
+### fetchDeps Implementation
+
+Key points from `libs/buf/fetchDeps.nix:9`:
+
+1. Creates a fixed-output derivation (`outputHashMode = "recursive"`)
+2. Runs `buf dep graph` to download dependencies
+3. Stores them in `BUF_CACHE_DIR=$out`
+4. Uses provided `hash` to verify reproducibility
+
+### configHook Implementation
+
+Key points from `libs/buf/configHook.nix:5`:
+
+1. Implemented as a Nix `makeSetupHook`
+2. Runs in `postConfigureHooks` phase
+3. Copies deps to a writable temp directory
+4. Validates with `buf dep graph`
+
+## Troubleshooting
+
+### Hash Mismatch
+
+On first build or when dependencies change:
+
+```
+error: hash mismatch in fixed-output derivation
+```
+
+Solution: Update the `hash` parameter with the actual hash from the error message.
+
+### Missing bufDeps
+
+```
+Error: 'bufDeps' must be set when using bufConfigHook.
+```
+
+Solution: Add `bufDeps = lib.buf.fetchDeps { ... };` to your derivation.
+
+### buf.yaml Not Found
+
+If your `buf.yaml` is in a subdirectory:
+
+```nix
+bufRoot = "./proto";
+bufDeps = lib.buf.fetchDeps {
+  pname = "my-proto";
+  src = ./proto; # Point to the subdirectory
+  hash = "sha256-...";
+};
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Go Utilities" icon="golang" href="/libs/go">
+    Compile Go code generated from protobuf
+  </Card>
+  <Card title="Rust Utilities" icon="rust" href="/libs/rust">
+    Compile Rust code with tonic/prost
+  </Card>
+</CardGroup>

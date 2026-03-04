@@ -1,0 +1,413 @@
+---
+title: Gleam Utilities
+description: Build Gleam projects for Erlang or JavaScript targets with dependency management
+---
+
+`gleam.build` provides a comprehensive build function for Gleam projects that handles dependency fetching from Hex and Git, supports local packages, and can target either Erlang or JavaScript.
+
+## Overview
+
+Build Gleam projects with automatic dependency resolution:
+
+```nix
+packages.myapp = lib.gleam.build {
+  src = ./.;
+};
+```
+
+## Function Signature
+
+```nix
+gleam.build :: {
+  src,
+  nativeBuildInputs?,
+  localPackages?,
+  erlangPackage?,
+  rebar3Package?,
+  target?,
+  ...
+} -> Derivation
+```
+
+<ParamField path="src" type="path" required>
+  Source directory containing `gleam.toml` and `manifest.toml`.
+</ParamField>
+
+<ParamField path="nativeBuildInputs" type="list" default="[]">
+  Additional build inputs beyond the defaults.
+</ParamField>
+
+<ParamField path="localPackages" type="list" default="[]">
+  List of local Gleam packages (as paths) to use instead of fetching from Hex. Used for monorepo setups.
+</ParamField>
+
+<ParamField path="erlangPackage" type="derivation" default="pkgs.erlang">
+  Erlang runtime to use (only for Erlang target).
+</ParamField>
+
+<ParamField path="rebar3Package" type="derivation" default="pkgs.rebar3">
+  Rebar3 build tool (only for Erlang target).
+</ParamField>
+
+<ParamField path="target" type="string" default="from gleam.toml">
+  Build target: `"erlang"` or `"javascript"`. Defaults to the `target` field in `gleam.toml`, or `"erlang"` if not specified.
+</ParamField>
+
+## Return Value
+
+Returns a derivation with:
+
+- Binary in `$out/bin/<name>` (where `<name>` comes from `gleam.toml`)
+- For Erlang target: All BEAM files and dependencies in `$out/lib/`
+- For JavaScript target: All JS modules in `$out/lib/`
+
+## Examples
+
+### Basic Erlang Project
+
+```nix
+packages.myapp = lib.gleam.build {
+  src = ./.;
+};
+```
+
+With this `gleam.toml`:
+
+```toml
+name = "myapp"
+version = "1.0.0"
+target = "erlang"
+
+[dependencies]
+gleam_stdlib = "~> 0.34"
+gleam_erlang = "~> 0.25"
+```
+
+### JavaScript Target
+
+```nix
+packages.myapp-js = lib.gleam.build {
+  src = ./.;
+  target = "javascript";
+};
+```
+
+Or set in `gleam.toml`:
+
+```toml
+name = "myapp"
+version = "1.0.0"
+target = "javascript"
+```
+
+### With Local Packages (Monorepo)
+
+```nix
+let
+  # Build shared library
+  shared = lib.gleam.build {
+    src = ./packages/shared;
+  };
+in
+{
+  # Build main app with local dependency
+  packages.app = lib.gleam.build {
+    src = ./packages/app;
+    localPackages = [ ./packages/shared ];
+  };
+}
+```
+
+In `packages/app/gleam.toml`:
+
+```toml
+name = "app"
+
+[dependencies]
+shared = { path = "../shared" }
+```
+
+And in `packages/app/manifest.toml`:
+
+```toml
+packages = [
+  { name = "shared", source = "local", path = "../shared" },
+]
+```
+
+### Custom Erlang Version
+
+```nix
+packages.myapp = lib.gleam.build {
+  src = ./.;
+  erlangPackage = pkgs.erlang_26;
+};
+```
+
+### Additional Build Inputs
+
+```nix
+packages.myapp = lib.gleam.build {
+  src = ./.;
+  nativeBuildInputs = [
+    pkgs.postgresql # For PostgreSQL driver FFI
+  ];
+};
+```
+
+### Multi-Target Build
+
+```nix flake.nix
+{
+  outputs = { self, nixpkgs, nur }:
+    nur.lib.mkFlake { } (system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+        lib = nur.lib.${system};
+      in
+      {
+        packages = {
+          # Erlang target
+          default = lib.gleam.build {
+            src = ./.;
+            target = "erlang";
+          };
+
+          # JavaScript target
+          js = lib.gleam.build {
+            src = ./.;
+            target = "javascript";
+          };
+        };
+      }
+    );
+}
+```
+
+## Dependency Management
+
+### Hex Dependencies
+
+Dependencies from Hex (the package manager) are automatically fetched based on `manifest.toml`:
+
+```toml manifest.toml
+packages = [
+  { name = "gleam_stdlib", version = "0.34.0", source = "hex", outer_checksum = "abc..." },
+  { name = "gleam_json", version = "1.0.0", source = "hex", outer_checksum = "def..." },
+]
+```
+
+The `outer_checksum` is used by Nix's `fetchHex` to verify downloads.
+
+### Git Dependencies
+
+Git dependencies are also supported:
+
+```toml manifest.toml
+packages = [
+  {
+    name = "my_lib",
+    source = "git",
+    repo = "https://github.com/user/my_lib",
+    commit = "abc123..."
+  },
+]
+```
+
+### Local Dependencies
+
+For monorepo setups:
+
+```toml manifest.toml
+packages = [
+  { name = "shared", source = "local", path = "../shared" },
+]
+```
+
+Then provide the actual path in Nix:
+
+```nix
+lib.gleam.build {
+  src = ./packages/app;
+  localPackages = [ ./packages/shared ];
+}
+```
+
+The build function will automatically patch `manifest.toml` and `gleam.toml` to use the Nix store paths.
+
+## Build Targets
+
+### Erlang Target
+
+For Erlang target builds:
+
+1. Uses `gleam export erlang-shipment` to create a standalone package
+2. Creates a shell script wrapper that runs `erl` with the correct paths
+3. Includes all BEAM bytecode and dependencies
+
+Generated wrapper:
+
+```bash
+#!/usr/bin/env sh
+/nix/store/.../erlang/bin/erl \
+  -pa $out/lib/*/ebin \
+  -eval "myapp@@main:run(myapp)" \
+  -noshell \
+  -extra "$@"
+```
+
+### JavaScript Target
+
+For JavaScript target builds:
+
+1. Runs `gleam build --target javascript`
+2. Creates an entry point module that imports and runs `main()`
+3. Creates a shell script wrapper using Node.js
+
+Generated wrapper:
+
+```bash
+#!/usr/bin/env sh
+/nix/store/.../nodejs/bin/node $out/lib/myapp/main.mjs "$@"
+```
+
+### Elixir Support
+
+If any dependency requires Elixir (has `"mix"` in `build_tools`), Elixir is automatically added to `nativeBuildInputs`.
+
+## Implementation Details
+
+### Dependency Installation
+
+All dependencies are copied into `build/packages/` during the configure phase:
+
+```bash
+mkdir -p build/packages
+
+# Write packages.toml
+cat <<EOF > build/packages/packages.toml
+[packages]
+gleam_stdlib = "0.34.0"
+gleam_json = "1.0.0"
+EOF
+
+# Copy each dependency with proper permissions
+rsync --chmod=Du=rwx,Dg=rx,Do=rx,Fu=rw,Fg=r,Fo=r \
+  -r /nix/store/.../gleam_stdlib/* build/packages/gleam_stdlib/
+```
+
+### Local Package Path Rewriting
+
+When using `localPackages`, the build function patches both `manifest.toml` and `gleam.toml`:
+
+```bash
+sed -i -e 's|"../shared"|"${./packages/shared}"|g' manifest.toml
+sed -i -e 's|"../shared"|"${./packages/shared}"|g' gleam.toml
+```
+
+This ensures Gleam can find the packages in the Nix store.
+
+### Source Attribution
+
+This implementation is adapted from [arnarg/nix-gleam](https://github.com/arnarg/nix-gleam).
+
+Source location: `libs/gleam/build.nix:16`
+
+## Complete Example
+
+### Project Structure
+
+```
+my-gleam-project/
+├── gleam.toml
+├── manifest.toml
+├── src/
+│   └── my_app.gleam
+├── test/
+│   └── my_app_test.gleam
+└── flake.nix
+```
+
+### gleam.toml
+
+```toml
+name = "my_app"
+version = "1.0.0"
+target = "erlang"
+
+[dependencies]
+gleam_stdlib = "~> 0.34"
+gleam_erlang = "~> 0.25"
+gleam_otp = "~> 0.10"
+```
+
+### src/my_app.gleam
+
+```gleam
+import gleam/io
+
+pub fn main() {
+  io.println("Hello from Gleam!")
+}
+```
+
+### flake.nix
+
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    nur.url = "github:your-org/nur-nix";
+  };
+
+  outputs = { self, nixpkgs, nur }:
+    nur.lib.mkFlake { } (system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+        lib = nur.lib.${system};
+      in
+      {
+        packages.default = lib.gleam.build {
+          src = ./.;
+        };
+
+        devShells.default = pkgs.mkShell {
+          packages = with pkgs; [
+            gleam
+            erlang
+            rebar3
+          ];
+        };
+      }
+    );
+}
+```
+
+### Building and Running
+
+```bash
+# Build
+nix build
+
+# Run
+./result/bin/my_app
+# Output: Hello from Gleam!
+```
+
+## Best Practices
+
+1. **Commit manifest.toml**: Ensures reproducible builds
+2. **Use target in gleam.toml**: Makes intent clear
+3. **Leverage localPackages**: Great for monorepos
+4. **Pin dependency versions**: Use exact versions in `gleam.toml` for production
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Rust Utilities" icon="rust" href="/libs/rust">
+    Cross-compile Rust using cargo-zigbuild
+  </Card>
+  <Card title="Go Utilities" icon="golang" href="/libs/go">
+    Cross-compile Go applications
+  </Card>
+</CardGroup>

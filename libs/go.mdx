@@ -1,0 +1,312 @@
+---
+title: Go Utilities
+description: Cross-compile Go applications to any platform with GOOS/GOARCH support
+---
+
+`go.compile` allows you to cross-compile Go applications to different operating systems and architectures by overriding a Go package's build environment.
+
+## Overview
+
+Cross-compile any Go package to Windows, macOS, Linux, or other platforms:
+
+```nix
+packages.myapp-windows = lib.go.compile {
+  package = pkgs.buildGoModule {
+    pname = "myapp";
+    version = "1.0.0";
+    src = ./.;
+    vendorHash = null;
+  };
+  goos = "windows";
+  goarch = "amd64";
+};
+```
+
+## Function Signature
+
+```nix
+go.compile :: { package, goos?, goarch?, ... } -> Derivation
+```
+
+<ParamField path="package" type="derivation" required>
+  A Go package built with `buildGoModule` or `buildGo123Module`.
+</ParamField>
+
+<ParamField path="goos" type="string" default="stdenv.buildPlatform.go.GOOS">
+  Target operating system. Common values:
+  - `"linux"`
+  - `"darwin"` (macOS)
+  - `"windows"`
+  - `"freebsd"`
+  - `"openbsd"`
+</ParamField>
+
+<ParamField path="goarch" type="string" default="stdenv.buildPlatform.go.GOARCH">
+  Target architecture. Common values:
+  - `"amd64"` (x86_64)
+  - `"arm64"` (aarch64)
+  - `"386"` (x86)
+  - `"arm"`
+</ParamField>
+
+## Return Value
+
+Returns a modified derivation with:
+
+- `GOOS` and `GOARCH` environment variables set
+- `doCheck = false` (tests disabled for cross-compilation)
+- Normalized output directory (handles Go's `$GOPATH/bin/${GOOS}_${GOARCH}`)
+- `meta.mainProgram` set to the binary name (with `.exe` for Windows)
+
+## Examples
+
+### Cross-Compile to Windows
+
+```nix
+let
+  myapp = pkgs.buildGoModule {
+    pname = "myapp";
+    version = "1.0.0";
+    src = ./.;
+    vendorHash = "sha256-...";
+  };
+in
+{
+  packages = {
+    # Native build
+    default = myapp;
+
+    # Windows 64-bit
+    myapp-windows = lib.go.compile {
+      package = myapp;
+      goos = "windows";
+      goarch = "amd64";
+    };
+  };
+}
+```
+
+### Multi-Platform Builds
+
+Build for all major platforms:
+
+```nix flake.nix
+{
+  outputs = { self, nixpkgs, nur }:
+    nur.lib.mkFlake { } (system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+        lib = nur.lib.${system};
+
+        myapp = pkgs.buildGoModule {
+          pname = "myapp";
+          version = "1.0.0";
+          src = ./.;
+          vendorHash = null;
+        };
+      in
+      {
+        packages = {
+          default = myapp;
+
+          # Linux
+          linux-amd64 = lib.go.compile {
+            package = myapp;
+            goos = "linux";
+            goarch = "amd64";
+          };
+
+          linux-arm64 = lib.go.compile {
+            package = myapp;
+            goos = "linux";
+            goarch = "arm64";
+          };
+
+          # macOS
+          darwin-amd64 = lib.go.compile {
+            package = myapp;
+            goos = "darwin";
+            goarch = "amd64";
+          };
+
+          darwin-arm64 = lib.go.compile {
+            package = myapp;
+            goos = "darwin";
+            goarch = "arm64";
+          };
+
+          # Windows
+          windows-amd64 = lib.go.compile {
+            package = myapp;
+            goos = "windows";
+            goarch = "amd64";
+          };
+        };
+      }
+    );
+}
+```
+
+### Using with Override
+
+Since `compile` is created with `lib.makeOverridable`, you can use `.override`:
+
+```nix
+let
+  myapp = pkgs.buildGoModule { /* ... */ };
+
+  # Create a base windows build
+  windowsBuild = lib.go.compile {
+    package = myapp;
+    goos = "windows";
+  };
+in
+{
+  # Override to build for different arch
+  packages.windows-386 = windowsBuild.override {
+    goarch = "386";
+  };
+}
+```
+
+### Release Workflow
+
+Create a release app that builds all platforms:
+
+```nix
+{
+  apps = lib.mkApps {
+    release = {
+      script = ''
+        VERSION=$(cat VERSION)
+        echo "Building release v$VERSION for all platforms..."
+
+        # Build all platform variants
+        nix build .#linux-amd64
+        nix build .#linux-arm64
+        nix build .#darwin-amd64
+        nix build .#darwin-arm64
+        nix build .#windows-amd64
+
+        # Create archives
+        mkdir -p dist
+        tar czf "dist/myapp-v$VERSION-linux-amd64.tar.gz" -C result/bin .
+        tar czf "dist/myapp-v$VERSION-windows-amd64.zip" -C result/bin .
+
+        echo "Release artifacts created in dist/"
+      '';
+      deps = with pkgs; [ nix coreutils gnutar gzip ];
+    };
+  };
+}
+```
+
+### CGo Considerations
+
+For pure Go code, cross-compilation works seamlessly. For CGo:
+
+```nix
+# This works for pure Go
+lib.go.compile {
+  package = pkgs.buildGoModule { /* ... */ };
+  goos = "windows";
+}
+
+# For CGo, you may need a cross-compiler
+# (Beyond the scope of go.compile - use pkgsCross instead)
+```
+
+## Implementation Details
+
+### Binary Name Normalization
+
+The binary name is determined from `pname` or `name`, and `.exe` is appended for Windows:
+
+```nix
+let
+  name = if (builtins.hasAttr "pname" prev) then prev.pname else prev.name;
+  bin = if (goos == "windows") then "${name}.exe" else name;
+in
+```
+
+### Output Directory Normalization
+
+Go's build system puts cross-compiled binaries in `$GOPATH/bin/${GOOS}_${GOARCH}`. The `postBuild` phase normalizes this:
+
+```bash
+dir=$GOPATH/bin/${GOOS}_${GOARCH}
+if [[ -n "$(shopt -s nullglob; echo $dir/*)" ]]; then
+  mv $dir/* $dir/..
+fi
+if [[ -d $dir ]]; then
+  rmdir $dir
+fi
+```
+
+### Test Disabling
+
+Tests are automatically disabled for cross-compilation:
+
+```nix
+doCheck = false;
+```
+
+### Source Location
+
+Implemented in: `libs/go/compile.nix:6`
+
+## GOOS and GOARCH Values
+
+### Supported GOOS Values
+
+- `aix`
+- `android`
+- `darwin` (macOS)
+- `dragonfly`
+- `freebsd`
+- `illumos`
+- `ios`
+- `js`
+- `linux`
+- `netbsd`
+- `openbsd`
+- `plan9`
+- `solaris`
+- `windows`
+
+### Supported GOARCH Values
+
+- `386` (32-bit x86)
+- `amd64` (64-bit x86)
+- `arm` (32-bit ARM)
+- `arm64` (64-bit ARM)
+- `loong64`
+- `mips`
+- `mips64`
+- `mips64le`
+- `mipsle`
+- `ppc64`
+- `ppc64le`
+- `riscv64`
+- `s390x`
+- `wasm`
+
+Not all combinations are valid. See [Go's supported platforms](https://go.dev/doc/install/source#environment) for the compatibility matrix.
+
+## Best Practices
+
+1. **Test cross-compiled binaries**: Run them on target platforms to verify
+2. **Avoid CGo for cross-compilation**: Pure Go is much simpler
+3. **Use meaningful package names**: Include platform in the name (e.g., `myapp-windows`)
+4. **Disable tests**: They often don't work when cross-compiling
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Rust Utilities" icon="rust" href="/libs/rust">
+    Cross-compile Rust with cargo-zigbuild
+  </Card>
+  <Card title="Deno Utilities" icon="deno" href="/libs/deno">
+    Compile TypeScript/JavaScript to binaries
+  </Card>
+</CardGroup>

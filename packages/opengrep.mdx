@@ -1,0 +1,191 @@
+---
+title: opengrep
+description: Static code analysis engine to find security issues in code
+---
+
+[opengrep](https://github.com/opengrep/opengrep) is a static code analysis engine that finds security vulnerabilities and bugs in your code. It's a community-maintained fork of Semgrep.
+
+## Installation
+
+### Run directly
+
+```bash
+nix run github:spotdemo4/nur#opengrep
+```
+
+### Add to flake
+
+```nix
+devShells.default = pkgs.mkShell {
+  packages = with pkgs.trev; [
+    opengrep
+  ];
+};
+```
+
+## Usage
+
+### Scan current directory
+
+Run opengrep with default rules:
+
+```bash
+opengrep --config=auto .
+```
+
+### Scan with specific rulesets
+
+```bash
+opengrep --config=p/security-audit .
+```
+
+### Scan specific files
+
+```bash
+opengrep --config=auto src/auth/*.js
+```
+
+## Available rulesets
+
+opengrep includes curated rulesets for common security issues:
+
+- `p/security-audit` - Comprehensive security audit
+- `p/owasp-top-ten` - OWASP Top 10 vulnerabilities
+- `p/secrets` - Hardcoded secrets detection
+- `p/sql-injection` - SQL injection vulnerabilities
+- `p/xss` - Cross-site scripting issues
+- `p/command-injection` - Command injection vulnerabilities
+
+### Language-specific rulesets
+
+```bash
+opengrep --config=p/javascript .
+opengrep --config=p/python .
+opengrep --config=p/java .
+opengrep --config=p/go .
+```
+
+## Custom rules
+
+Create custom rules in YAML format:
+
+```yaml opengrep.yml
+rules:
+  - id: hardcoded-api-key
+    pattern: api_key = "..."
+    message: Hardcoded API key found
+    severity: ERROR
+    languages:
+      - python
+      - javascript
+```
+
+Run with custom rules:
+
+```bash
+opengrep --config=opengrep.yml .
+```
+
+## CI/CD integration
+
+### GitHub Actions
+
+```yaml .github/workflows/security.yml
+name: Security Scan
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  opengrep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            extra-substituters = https://nix.trev.zip
+            extra-trusted-public-keys = trev:I39N/EsnHkvfmsbx8RUW+ia5dOzojTQNCTzKYij1chU=
+      
+      - name: Run opengrep
+        run: |
+          nix run github:spotdemo4/nur#opengrep -- --config=p/security-audit --error .
+```
+
+### GitLab CI
+
+```yaml .gitlab-ci.yml
+security-scan:
+  image: nixos/nix
+  script:
+    - nix run github:spotdemo4/nur#opengrep -- --config=p/security-audit .
+  allow_failure: false
+```
+
+## Output formats
+
+### JSON output
+
+```bash
+opengrep --config=auto --json . > results.json
+```
+
+### SARIF output
+
+For GitHub Code Scanning:
+
+```bash
+opengrep --config=auto --sarif . > results.sarif
+```
+
+### JUnit XML
+
+For CI/CD integration:
+
+```bash
+opengrep --config=auto --junit-xml . > results.xml
+```
+
+## Advanced features
+
+### Autofix
+
+opengrep can automatically fix some issues:
+
+```bash
+opengrep --config=auto --autofix .
+```
+
+### Ignore patterns
+
+Create a `.opengrep-ignore` file:
+
+```
+vendor/
+node_modules/
+*.test.js
+```
+
+### Performance tuning
+
+For large codebases:
+
+```bash
+opengrep --config=auto --max-memory=4000 --jobs=4 .
+```
+
+<Warning>
+Always review autofix changes before committing. While opengrep is generally safe, automated fixes may change code behavior.
+</Warning>
+
+<Tip>
+Combine opengrep with other security tools like `pysentry` for comprehensive security scanning of your projects.
+</Tip>
+
+## Links
+
+- [GitHub Repository](https://github.com/opengrep/opengrep)
+- [Rule Registry](https://semgrep.dev/r)

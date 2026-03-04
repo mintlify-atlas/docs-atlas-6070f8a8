@@ -1,0 +1,117 @@
+---
+title: Libraries Overview
+description: Utility libraries for simplifying common Nix flake patterns and cross-compilation workflows
+---
+
+Nur Nix provides a collection of utility libraries that simplify common patterns in Nix flakes and streamline cross-compilation workflows for various programming languages.
+
+## Available Libraries
+
+### Flake Utilities
+
+<CardGroup cols={2}>
+  <Card title="mkFlake" icon="layer-group" href="/libs/mkFlake">
+    Simplify multi-system flake outputs (like flake-utils)
+  </Card>
+  <Card title="mkChecks" icon="check" href="/libs/mkChecks">
+    Transform check definitions into flake checks
+  </Card>
+  <Card title="mkApps" icon="rocket" href="/libs/mkApps">
+    Convert script definitions into flake apps
+  </Card>
+</CardGroup>
+
+### Language-Specific Utilities
+
+<CardGroup cols={2}>
+  <Card title="Go" icon="golang" href="/libs/go">
+    Cross-compile Go applications to any platform
+  </Card>
+  <Card title="Rust" icon="rust" href="/libs/rust">
+    Cross-compile Rust using cargo-zigbuild
+  </Card>
+  <Card title="Deno" icon="deno" href="/libs/deno">
+    Compile TypeScript/JavaScript to standalone binaries
+  </Card>
+  <Card title="Gleam" icon="sparkles" href="/libs/gleam">
+    Build Gleam projects for Erlang or JavaScript targets
+  </Card>
+</CardGroup>
+
+### Protocol Buffers
+
+<Card title="Buf" icon="buffer" href="/libs/buf">
+  Fetch and manage Buf dependencies in Nix builds
+</Card>
+
+## Usage Pattern
+
+All libraries are available through the Nur Nix flake:
+
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    nur.url = "github:your-org/nur-nix";
+  };
+
+  outputs = { self, nixpkgs, nur }:
+    nur.lib.mkFlake { } (system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+        lib = nur.lib.${system};
+      in
+      {
+        # Use any library function
+        packages.my-app = lib.go.compile {
+          package = pkgs.buildGoModule { ... };
+          goos = "windows";
+          goarch = "amd64";
+        };
+      }
+    );
+}
+```
+
+## Design Philosophy
+
+### Pure Nix Functions
+
+All utilities in the `libs/` directory are **pure Nix functions** that don't depend on `pkgs`. This makes them:
+
+- Reusable across different nixpkgs versions
+- Easy to test and reason about
+- Suitable for use in flake schemas
+
+### Override-Friendly
+
+Most functions use `lib.makeOverridable` so you can customize behavior:
+
+```nix
+lib.go.compile.override {
+  goos = "darwin";
+} {
+  package = myGoApp;
+}
+```
+
+### Minimal Boilerplate
+
+These libraries eliminate repetitive patterns:
+
+- **Without mkFlake**: Manually map over systems, merge attrsets
+- **With mkFlake**: Single function call handles all systems
+
+- **Without mkApps**: Write derivations with install phases
+- **With mkApps**: Just provide a script
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Flake Utilities" icon="layer-group" href="/libs/mkFlake">
+    Start with mkFlake to simplify your flake structure
+  </Card>
+  <Card title="Cross-Compilation" icon="globe" href="/libs/go">
+    Learn how to cross-compile applications
+  </Card>
+</CardGroup>

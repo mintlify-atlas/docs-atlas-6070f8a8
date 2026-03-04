@@ -1,0 +1,393 @@
+---
+title: Rust Utilities
+description: Cross-compile Rust applications using cargo-zigbuild for seamless multi-platform builds
+---
+
+`rust.compile` enables cross-compilation of Rust projects to different platforms using [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild), which leverages Zig's cross-compilation capabilities.
+
+## Overview
+
+Cross-compile Rust packages to any platform supported by Zig:
+
+```nix
+packages.myapp-windows = lib.rust.compile {
+  package = pkgs.rustPlatform.buildRustPackage {
+    pname = "myapp";
+    version = "1.0.0";
+    src = ./.;
+    cargoLock.lockFile = ./Cargo.lock;
+  };
+  target = "x86_64-pc-windows-gnu";
+};
+```
+
+## Function Signature
+
+```nix
+rust.compile :: { package, target?, ... } -> Derivation
+```
+
+<ParamField path="package" type="derivation" required>
+  A Rust package built with `rustPlatform.buildRustPackage`.
+</ParamField>
+
+<ParamField path="target" type="string" default="stdenv.buildPlatform.rust.rustcTarget">
+  Target platform triple. Examples:
+  - `"x86_64-unknown-linux-gnu"`
+  - `"aarch64-unknown-linux-gnu"`
+  - `"x86_64-pc-windows-gnu"`
+  - `"x86_64-apple-darwin"`
+  - `"aarch64-apple-darwin"`
+</ParamField>
+
+## Return Value
+
+Returns a modified derivation with:
+
+- Cross-compiled binary in `$out/bin/<name>`
+- `.exe` extension for Windows targets
+- `meta.mainProgram` set correctly
+- `auditable = false` (cargo-auditable removed for compatibility)
+- `doCheck = false` (tests disabled for cross-compilation)
+
+## Examples
+
+### Basic Cross-Compilation
+
+```nix
+let
+  myapp = pkgs.rustPlatform.buildRustPackage {
+    pname = "myapp";
+    version = "1.0.0";
+    src = ./.;
+    cargoLock.lockFile = ./Cargo.lock;
+  };
+in
+{
+  packages = {
+    # Native build
+    default = myapp;
+
+    # Cross-compile to Windows
+    windows = lib.rust.compile {
+      package = myapp;
+      target = "x86_64-pc-windows-gnu";
+    };
+  };
+}
+```
+
+### Multi-Platform Release
+
+```nix flake.nix
+{
+  outputs = { self, nixpkgs, nur }:
+    nur.lib.mkFlake { } (system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+        lib = nur.lib.${system};
+
+        myapp = pkgs.rustPlatform.buildRustPackage {
+          pname = "myapp";
+          version = "1.0.0";
+          src = ./.;
+          cargoLock.lockFile = ./Cargo.lock;
+        };
+      in
+      {
+        packages = {
+          default = myapp;
+
+          # Linux
+          linux-x86_64 = lib.rust.compile {
+            package = myapp;
+            target = "x86_64-unknown-linux-gnu";
+          };
+
+          linux-aarch64 = lib.rust.compile {
+            package = myapp;
+            target = "aarch64-unknown-linux-gnu";
+          };
+
+          # macOS
+          macos-x86_64 = lib.rust.compile {
+            package = myapp;
+            target = "x86_64-apple-darwin";
+          };
+
+          macos-aarch64 = lib.rust.compile {
+            package = myapp;
+            target = "aarch64-apple-darwin";
+          };
+
+          # Windows
+          windows-x86_64 = lib.rust.compile {
+            package = myapp;
+            target = "x86_64-pc-windows-gnu";
+          };
+        };
+      }
+    );
+}
+```
+
+### Using with Override
+
+Since `compile` uses `lib.makeOverridable`:
+
+```nix
+let
+  myapp = pkgs.rustPlatform.buildRustPackage { /* ... */ };
+
+  # Create a base compile function
+  compileFor = lib.rust.compile { package = myapp; };
+in
+{
+  packages = {
+    # Override for different targets
+    windows = compileFor.override { target = "x86_64-pc-windows-gnu"; };
+    macos = compileFor.override { target = "aarch64-apple-darwin"; };
+  };
+}
+```
+
+### Release Automation
+
+```nix
+{
+  apps = lib.mkApps {
+    release = {
+      script = ''
+        set -euo pipefail
+
+        VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+        echo "Building release v$VERSION for all platforms..."
+
+        # Build all targets
+        nix build .#linux-x86_64
+        nix build .#linux-aarch64
+        nix build .#macos-x86_64
+        nix build .#macos-aarch64
+        nix build .#windows-x86_64
+
+        # Create release archives
+        mkdir -p dist
+        tar czf "dist/myapp-v$VERSION-linux-x86_64.tar.gz" -C result/bin .
+        tar czf "dist/myapp-v$VERSION-macos-aarch64.tar.gz" -C result/bin .
+        zip "dist/myapp-v$VERSION-windows-x86_64.zip" -j result/bin/*.exe
+
+        echo "Release artifacts in dist/"
+        ls -lh dist/
+      '';
+      deps = with pkgs; [ cargo-metadata jq nix gnutar gzip zip ];
+    };
+  };
+}
+```
+
+## Supported Targets
+
+Any target supported by both Rust and Zig can be used. Common targets:
+
+### Linux
+- `x86_64-unknown-linux-gnu`
+- `aarch64-unknown-linux-gnu`
+- `x86_64-unknown-linux-musl` (static linking)
+- `aarch64-unknown-linux-musl`
+
+### macOS
+- `x86_64-apple-darwin` (Intel)
+- `aarch64-apple-darwin` (Apple Silicon)
+
+### Windows
+- `x86_64-pc-windows-gnu`
+- `i686-pc-windows-gnu`
+
+### Other
+- `wasm32-unknown-unknown` (WebAssembly)
+- `wasm32-wasi`
+
+For a full list, see [Rust platform support](https://doc.rust-lang.org/nightly/rustc/platform-support.html).
+
+## Implementation Details
+
+### cargo-zigbuild Integration
+
+The implementation uses `cargo-zigbuild` instead of regular `cargo build` for cross-compilation:
+
+```bash
+if [[ "${target}" == "${stdenv.hostPlatform.rust.rustcTarget}" ]]; then
+  # Native build - use regular cargo
+  cargo build --release --target-dir "$build_dir"
+else
+  # Cross-compilation - use cargo-zigbuild
+  cargo zigbuild --release --target-dir "$build_dir" --target "${target}"
+fi
+```
+
+This automatically handles:
+- Cross-compilation toolchain setup
+- Linker configuration
+- C library linking
+
+### cargo-auditable Removal
+
+`cargo-auditable` is filtered out from `nativeBuildInputs` because it's not compatible with `cargo-zigbuild`:
+
+```nix
+nativeBuildInputs = [
+  cargo-zigbuild
+  jq
+]
+++ builtins.filter (
+  drv: builtins.match ".*auditable.*" (lib.getName drv) == null
+) prev.nativeBuildInputs;
+```
+
+### Binary Name Detection
+
+The binary name is extracted from `Cargo.toml` using `cargo metadata`:
+
+```bash
+package_name=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].name')
+release=$(find $build_dir -type f -executable -name "${package_name}*")
+```
+
+Windows binaries automatically get `.exe` extension:
+
+```nix
+bin = if (builtins.match ".*windows.*" target != null) then "${name}.exe" else name;
+```
+
+### Source Location
+
+Implemented in: `libs/rust/compile.nix:8`
+
+## cargo-zigbuild Advantages
+
+| Feature | cargo-zigbuild | Traditional cross-compilation |
+|---------|----------------|-------------------------------|
+| Setup complexity | Low (automatic) | High (manual toolchain) |
+| C library support | Built-in | Requires cross-compilers |
+| Platform coverage | Extensive | Limited |
+| Build speed | Fast | Varies |
+| Reproducibility | High | Medium |
+
+## Troubleshooting
+
+### Missing C Dependencies
+
+If your Rust project depends on C libraries (via FFI), you may need to provide them:
+
+```nix
+lib.rust.compile {
+  package = myapp.overrideAttrs (old: {
+    buildInputs = old.buildInputs ++ [
+      pkgs.openssl
+      pkgs.postgresql
+    ];
+  });
+  target = "x86_64-pc-windows-gnu";
+}
+```
+
+### Link Errors
+
+Some targets may have linking issues. Try using the `-musl` variant for static linking:
+
+```nix
+target = "x86_64-unknown-linux-musl"; # Static binary
+```
+
+### Binary Not Found
+
+If the binary isn't found after build, check `Cargo.toml` for the correct binary name:
+
+```toml
+[[bin]]
+name = "my-custom-name"
+path = "src/main.rs"
+```
+
+## Best Practices
+
+1. **Test on target platforms**: Always test cross-compiled binaries on actual target systems
+2. **Use musl for Linux**: Static binaries are more portable
+3. **Pin Rust version**: Use `rust-bin` overlay or similar for reproducible builds
+4. **Minimize C dependencies**: Pure Rust code cross-compiles more reliably
+5. **Check target tier**: Tier 1 targets have better support than Tier 2/3
+
+## Complete Example
+
+### Cargo.toml
+
+```toml
+[package]
+name = "myapp"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.4", features = ["derive"] }
+tokio = { version = "1.35", features = ["full"] }
+```
+
+### flake.nix
+
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    nur.url = "github:your-org/nur-nix";
+  };
+
+  outputs = { self, nixpkgs, nur }:
+    nur.lib.mkFlake { } (system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+        lib = nur.lib.${system};
+
+        myapp = pkgs.rustPlatform.buildRustPackage {
+          pname = "myapp";
+          version = "1.0.0";
+          src = ./.;
+          cargoLock.lockFile = ./Cargo.lock;
+        };
+      in
+      {
+        packages = {
+          default = myapp;
+          linux = lib.rust.compile { package = myapp; };
+          windows = lib.rust.compile {
+            package = myapp;
+            target = "x86_64-pc-windows-gnu";
+          };
+          macos = lib.rust.compile {
+            package = myapp;
+            target = "aarch64-apple-darwin";
+          };
+        };
+
+        devShells.default = pkgs.mkShell {
+          packages = with pkgs; [
+            cargo
+            rustc
+            cargo-zigbuild
+            rust-analyzer
+          ];
+        };
+      }
+    );
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Go Utilities" icon="golang" href="/libs/go">
+    Cross-compile Go applications
+  </Card>
+  <Card title="Deno Utilities" icon="deno" href="/libs/deno">
+    Compile TypeScript/JavaScript to binaries
+  </Card>
+</CardGroup>

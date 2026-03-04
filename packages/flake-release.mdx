@@ -1,0 +1,131 @@
+---
+title: flake-release
+description: Flake package releaser for automated releases
+---
+
+[flake-release](https://github.com/spotdemo4/flake-release) automates the release process for Nix flake packages, handling version bumping, changelog generation, and git tagging.
+
+## Installation
+
+### Run directly
+
+```bash
+nix run github:spotdemo4/nur#flake-release
+```
+
+### Add to flake
+
+```nix
+devShells.default = pkgs.mkShell {
+  packages = with pkgs.trev; [
+    flake-release
+  ];
+};
+```
+
+## Usage
+
+### Create a release
+
+```bash
+flake-release
+```
+
+This will:
+1. Analyze commits since last release
+2. Determine version bump (major, minor, or patch)
+3. Update version in flake.nix
+4. Generate changelog
+5. Create git tag
+6. Push changes and tag
+
+### Specify version bump
+
+Manually specify the type of version bump:
+
+```bash
+flake-release --bump major
+flake-release --bump minor
+flake-release --bump patch
+```
+
+### Dry run
+
+Preview changes without applying them:
+
+```bash
+flake-release --dry-run
+```
+
+## Workflow integration
+
+### GitHub Actions
+
+Automate releases with GitHub Actions:
+
+```yaml .github/workflows/release.yml
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump type'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            extra-substituters = https://nix.trev.zip
+            extra-trusted-public-keys = trev:I39N/EsnHkvfmsbx8RUW+ia5dOzojTQNCTzKYij1chU=
+      
+      - name: Create release
+        run: |
+          nix run github:spotdemo4/nur#flake-release -- --bump ${{ github.event.inputs.bump }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+## Features
+
+- **Semantic versioning**: Automatic version bumping based on commits
+- **Changelog generation**: Generate changelogs from git history
+- **Git integration**: Automatic tagging and pushing
+- **Conventional commits**: Parse conventional commit messages
+- **Dry run mode**: Preview changes before applying
+
+## Configuration
+
+Create a `.flake-release.toml` file to customize behavior:
+
+```toml
+[release]
+changelog = true
+tag_prefix = "v"
+push = true
+
+[changelog]
+file = "CHANGELOG.md"
+format = "markdown"
+```
+
+<Note>
+flake-release expects your flake.nix to include version information in the package metadata. Make sure your packages expose a `version` attribute.
+</Note>
+
+## Links
+
+- [GitHub Repository](https://github.com/spotdemo4/flake-release)

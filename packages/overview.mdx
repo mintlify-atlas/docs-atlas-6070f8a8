@@ -1,0 +1,106 @@
+---
+title: Packages overview
+description: Curated collection of Nix packages with automatic updates and binary caching
+---
+
+Nur Nix provides a curated collection of packages that are kept up-to-date automatically with continuous integration. All packages are pre-built and available through the binary cache for instant installation.
+
+## Available packages
+
+<CardGroup cols={2}>
+  <Card title="bobgen" icon="database" href="/packages/bobgen">
+    SQL query builder and ORM/Factory generator for Go
+  </Card>
+  <Card title="bumper" icon="arrow-up" href="/packages/bumper">
+    Version bumper for projects using git and semantic versioning
+  </Card>
+  <Card title="catppuccin-zen-browser" icon="palette" href="/packages/catppuccin-zen-browser">
+    Catppuccin theme for Zen Browser
+  </Card>
+  <Card title="ffmpeg-quality-metrics" icon="video" href="/packages/ffmpeg-quality-metrics">
+    Calculate video quality metrics with FFmpeg (SSIM, PSNR, VMAF, VIF)
+  </Card>
+  <Card title="flake-release" icon="rocket" href="/packages/flake-release">
+    Flake package releaser for automated releases
+  </Card>
+  <Card title="go-over" icon="shield-check" href="/packages/go-over">
+    Tool to audit Erlang & Elixir dependencies
+  </Card>
+  <Card title="nix-fix-hash" icon="wrench" href="/packages/nix-fix-hash">
+    Nix hash fixer for automatic hash updates
+  </Card>
+  <Card title="opengrep" icon="magnifying-glass" href="/packages/opengrep">
+    Static code analysis engine to find security issues
+  </Card>
+  <Card title="protoc-gen-connect-openapi" icon="code" href="/packages/protoc-gen-connect-openapi">
+    Protobuf plugin for generating OpenAPI specs
+  </Card>
+  <Card title="pysentry" icon="shield-halved" href="/packages/pysentry">
+    Scan Python dependencies for security vulnerabilities
+  </Card>
+  <Card title="qsvenc" icon="microchip" href="/packages/qsvenc">
+    QSV high-speed encoding performance tool
+  </Card>
+  <Card title="renovate" icon="arrows-rotate" href="/packages/renovate">
+    Cross-platform dependency automation with Nix patches
+  </Card>
+  <Card title="shellhook" icon="terminal" href="/packages/shellhook">
+    Shell hook for Nix development environments
+  </Card>
+</CardGroup>
+
+## Installation methods
+
+All packages can be used in multiple ways:
+
+### Run directly
+
+Run any package without installing it:
+
+```bash
+nix run github:spotdemo4/nur#<package-name>
+```
+
+### Add to flake
+
+Include packages in your development shell or system configuration:
+
+```nix
+devShells.default = pkgs.mkShell {
+  packages = with pkgs.trev; [
+    bobgen
+    bumper
+  ];
+};
+```
+
+### NixOS system packages
+
+Add to your NixOS system:
+
+```nix
+environment.systemPackages = with pkgs.trev; [
+  opengrep
+  renovate
+];
+```
+
+## Features
+
+<Note>
+All packages are cached at `https://nix.trev.zip` and updated automatically. See the [cache documentation](/cache) for configuration.
+</Note>
+
+- **Automatic updates**: Packages are kept current with upstream releases
+- **Binary caching**: Pre-built binaries available for instant installation
+- **NUR integration**: Available through the [Nix User Repository](https://nur.nix-community.org/repos/trev/)
+- **Multi-platform**: Built for x86_64-linux, aarch64-linux, x86_64-darwin, and aarch64-darwin where supported
+
+## Package status
+
+Some packages are pending inclusion in nixpkgs:
+
+- **bobgen** - [NixOS/nixpkgs#420450](https://github.com/NixOS/nixpkgs/pull/420450)
+- **protoc-gen-connect-openapi** - [NixOS/nixpkgs#398495](https://github.com/NixOS/nixpkgs/pull/398495)
+
+These packages are available in Nur Nix while the nixpkgs PRs are under review.

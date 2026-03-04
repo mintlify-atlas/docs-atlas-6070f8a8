@@ -1,0 +1,100 @@
+---
+title: Container Images
+description: Pre-built container images with reproducible hashes for Nix builds
+---
+
+Nur Nix provides pre-built container images that can be pulled and used in your Nix configurations with content-addressed hashing for reproducibility.
+
+## Available Images
+
+<CardGroup cols={2}>
+  <Card title="FFmpeg" icon="video" href="/images/ffmpeg">
+    FFmpeg 8.0.1 container image from LinuxServer.io
+  </Card>
+  <Card title="Nix" icon="cube" href="/images/nix">
+    Official Nix 2.34.0 container image from NixOS
+  </Card>
+</CardGroup>
+
+## Why Pre-Built Images?
+
+These container images are wrapped with Nix for several benefits:
+
+<AccordionGroup>
+  <Accordion title="Reproducible Builds" icon="lock">
+    Each image is pinned to a specific digest with a Nix content hash, ensuring the exact same image is pulled every time.
+  </Accordion>
+  
+  <Accordion title="Nix Integration" icon="puzzle-piece">
+    Images can be referenced directly in Nix flakes and expressions, making them first-class citizens in your Nix infrastructure.
+  </Accordion>
+  
+  <Accordion title="Declarative Configuration" icon="file-code">
+    Define your entire container setup in Nix, from the base image to the runtime configuration.
+  </Accordion>
+  
+  <Accordion title="Workaround for Nixpkgs Issues" icon="wrench">
+    These images include fixes for known Nixpkgs issues (e.g., [#445481](https://github.com/nixos/nixpkgs/issues/445481)).
+  </Accordion>
+</AccordionGroup>
+
+## Quick Start
+
+### Using in a Flake
+
+Add Nur Nix to your flake inputs:
+
+```nix flake.nix
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nur-nix.url = "github:yourusername/nur-nix";
+  };
+
+  outputs = { self, nixpkgs, nur-nix }: {
+    # Use the images in your configuration
+    packages.x86_64-linux.default = nur-nix.images.x86_64-linux.ffmpeg;
+  };
+}
+```
+
+### Building an Image
+
+Build and load a container image:
+
+```bash
+# Build the FFmpeg image
+nix build github:yourusername/nur-nix#images.x86_64-linux.ffmpeg
+
+# Load into Docker
+docker load < result
+```
+
+## Image Architecture
+
+All images are built for `linux/amd64` architecture and use `dockerTools.pullImage` from Nixpkgs to fetch upstream images with verification.
+
+### Structure
+
+Each image definition includes:
+
+- **Image Name**: The upstream Docker image reference
+- **Tag**: Specific version tag (e.g., `8.0.1`, `2.34.0`)
+- **Digest**: SHA256 digest for the exact image manifest
+- **Hash**: Nix content hash for reproducibility
+- **Attributes**: Special attributes for structured attrs and reference handling
+
+<Note>
+  The `unsafeDiscardReferences` attribute is required due to Nixpkgs issue [#445481](https://github.com/nixos/nixpkgs/issues/445481) to properly handle image references.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="FFmpeg Image" icon="video" href="/images/ffmpeg">
+    Learn about the FFmpeg container image
+  </Card>
+  <Card title="Nix Image" icon="cube" href="/images/nix">
+    Explore the official Nix container image
+  </Card>
+</CardGroup>

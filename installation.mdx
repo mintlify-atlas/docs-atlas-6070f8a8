@@ -1,0 +1,321 @@
+---
+title: Installation
+description: Install and set up trev's Nix repository in your flake or NixOS configuration
+---
+
+Install packages, bundlers, and libs from this repository using either direct flake installation or the Nix User Repository (NUR).
+
+<Note>
+  Configure the [binary cache](/cache) to avoid building packages from source.
+</Note>
+
+## Direct Flake Installation
+
+Add the flake as an input to your `flake.nix` and use overlays to access packages and libs.
+
+<Steps>
+  <Step title="Add to flake inputs">
+    Add the repository to your flake inputs with nixpkgs and systems following:
+
+    ```nix flake.nix
+    {
+      inputs = {
+        systems.url = "github:nix-systems/default";
+        nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
+        trev = {
+          url = "github:spotdemo4/nur";
+          inputs.systems.follows = "systems";
+          inputs.nixpkgs.follows = "nixpkgs";
+        };
+      };
+    }
+    ```
+
+    <Note>
+      Using `follows` ensures you don't duplicate nixpkgs and systems in your flake lock.
+    </Note>
+  </Step>
+
+  <Step title="Import overlays">
+    Import nixpkgs with the overlays to access packages and libs:
+
+    ```nix flake.nix
+    outputs = { nixpkgs, trev, ... }:
+      trev.libs.mkFlake (system:
+        let
+          pkgs = import nixpkgs {
+            inherit system;
+            overlays = [
+              trev.overlays.packages
+              trev.overlays.libs
+            ];
+          };
+        in
+        rec {
+          # Your flake outputs here
+        }
+      );
+    ```
+
+    <Accordion title="Available overlays">
+      - `packages` - Adds all packages directly to pkgs namespace
+      - `libs` - Adds utility functions to `pkgs.lib`
+      - `images` - Adds Docker images to `pkgs.image`
+      - `pythonPackages` - Adds Python packages to Python package sets
+      - `default` - Adds all packages under `pkgs.trev` namespace
+    </Accordion>
+  </Step>
+
+  <Step title="Use packages in dev shells">
+    Access packages through the pkgs namespace:
+
+    ```nix flake.nix
+    devShells = {
+      default = pkgs.mkShell {
+        packages = with pkgs; [
+          nixfmt
+          prettier
+          bobgen        # From trev.overlays.packages
+          opengrep      # From trev.overlays.packages
+        ];
+        shellHook = pkgs.shellhook.ref;
+      };
+    };
+    ```
+  </Step>
+
+  <Step title="Add to NixOS system packages">
+    For NixOS configurations, import the overlay module:
+
+    ```nix flake.nix
+    nixosConfigurations = {
+      laptop = nixpkgs.lib.nixosSystem {
+        modules = [
+          trev.nixosModules.overlay  # Adds the default overlay
+
+          ({ pkgs, ... }: {
+            environment.systemPackages = [
+              pkgs.trev.bobgen
+              pkgs.trev.renovate
+              pkgs.trev.opengrep
+            ];
+          })
+        ];
+      };
+    };
+    ```
+  </Step>
+</Steps>
+
+### Complete Example
+
+<CodeGroup>
+```nix Dev Shell
+{
+  nixConfig = {
+    extra-substituters = [ "https://nix.trev.zip" ];
+    extra-trusted-public-keys = [ "trev:I39N/EsnHkvfmsbx8RUW+ia5dOzojTQNCTzKYij1chU=" ];
+  };
+
+  inputs = {
+    systems.url = "github:nix-systems/default";
+    nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
+    trev = {
+      url = "github:spotdemo4/nur";
+      inputs.systems.follows = "systems";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
+
+  outputs = { nixpkgs, trev, ... }:
+    trev.libs.mkFlake (system:
+      let
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [
+            trev.overlays.packages
+            trev.overlays.libs
+          ];
+        };
+      in
+      rec {
+        devShells = {
+          default = pkgs.mkShell {
+            packages = with pkgs; [
+              nixfmt
+              prettier
+            ];
+            shellHook = pkgs.shellhook.ref;
+          };
+        };
+
+        checks = pkgs.lib.mkChecks {
+          nix = {
+            src = ./.;
+            deps = with pkgs; [ nixfmt-tree ];
+            script = ''
+              treefmt --ci
+            '';
+          };
+        };
+      }
+    );
+}
+```
+
+```nix NixOS Configuration
+{
+  nixConfig = {
+    extra-substituters = [ "https://nix.trev.zip" ];
+    extra-trusted-public-keys = [ "trev:I39N/EsnHkvfmsbx8RUW+ia5dOzojTQNCTzKYij1chU=" ];
+  };
+
+  inputs = {
+    systems.url = "github:nix-systems/default";
+    nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
+    trev = {
+      url = "github:spotdemo4/nur";
+      inputs.systems.follows = "systems";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
+
+  outputs = { nixpkgs, trev, ... }:
+    trev.libs.mkFlake (system:
+      let
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [
+            trev.overlays.packages
+            trev.overlays.libs
+          ];
+        };
+      in
+      rec {
+        nixosConfigurations = {
+          laptop = nixpkgs.lib.nixosSystem {
+            modules = [
+              trev.nixosModules.overlay
+
+              ({ pkgs, ... }: {
+                environment.systemPackages = [
+                  pkgs.trev.bobgen
+                ];
+              })
+            ];
+          };
+        };
+      }
+    );
+}
+```
+</CodeGroup>
+
+## Nix User Repository (NUR)
+
+Install packages through the [Nix User Repository](https://github.com/nix-community/NUR) as an alternative to direct flake installation.
+
+<Steps>
+  <Step title="Add NUR to inputs">
+    Add the NUR flake to your inputs:
+
+    ```nix flake.nix
+    {
+      inputs = {
+        nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+        nur = {
+          url = "github:nix-community/NUR";
+          inputs.nixpkgs.follows = "nixpkgs";
+        };
+      };
+    }
+    ```
+  </Step>
+
+  <Step title="Import NUR module">
+    Add the NUR module to your NixOS configuration:
+
+    ```nix flake.nix
+    outputs = { self, nixpkgs, nur }: {
+      nixosConfigurations = {
+        laptop = nixpkgs.lib.nixosSystem {
+          modules = [
+            nur.modules.nixos.default  # Adds NUR overlay
+
+            ({ pkgs, ... }: {
+              environment.systemPackages = [
+                pkgs.nur.repos.trev.bobgen
+                pkgs.nur.repos.trev.renovate
+              ];
+            })
+          ];
+        };
+      };
+    };
+    ```
+  </Step>
+</Steps>
+
+### Complete Example
+
+```nix flake.nix
+{
+  nixConfig = {
+    extra-substituters = [ "https://nix.trev.zip" ];
+    extra-trusted-public-keys = [ "trev:I39N/EsnHkvfmsbx8RUW+ia5dOzojTQNCTzKYij1chU=" ];
+  };
+
+  inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    nur = {
+      url = "github:nix-community/NUR";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
+
+  outputs = { self, nixpkgs, nur }: {
+    nixosConfigurations = {
+      laptop = nixpkgs.lib.nixosSystem {
+        modules = [
+          nur.modules.nixos.default
+
+          ({ pkgs, ... }: {
+            environment.systemPackages = [
+              pkgs.nur.repos.trev.bobgen
+            ];
+          })
+        ];
+      };
+    };
+  };
+}
+```
+
+<Warning>
+  Don't forget to configure the [binary cache](/cache) to avoid building packages from source.
+</Warning>
+
+## Quick Start Commands
+
+Run packages directly without installation:
+
+```bash
+# Run bobgen
+nix run github:spotdemo4/nur#bobgen
+
+# Run renovate
+nix run github:spotdemo4/nur#renovate
+
+# Run opengrep
+nix run github:spotdemo4/nur#opengrep
+```
+
+Bundle packages for distribution:
+
+```bash
+# Build Docker image
+nix bundle --bundler github:spotdemo4/nur#docker
+
+# Cross-compile Go package for Linux
+nix bundle --bundler github:spotdemo4/nur#go-x86_64-linux
+```

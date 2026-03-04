@@ -1,0 +1,258 @@
+---
+title: renovate
+description: Cross-platform dependency automation with Nix patches
+---
+
+[Renovate](https://github.com/renovatebot/renovate) is a cross-platform dependency update automation tool. This package includes patches specifically for Nix flake support.
+
+## Installation
+
+### Run directly
+
+```bash
+nix run github:spotdemo4/nur#renovate
+```
+
+### Add to flake
+
+```nix
+devShells.default = pkgs.mkShell {
+  packages = with pkgs.trev; [
+    renovate
+  ];
+};
+```
+
+## Patches included
+
+<Note>
+This version of Renovate is patched with [renovate#40282](https://github.com/renovatebot/renovate/pull/40282) to fix Nix flake updates.
+</Note>
+
+The patch improves:
+- Flake input update detection
+- Lock file parsing for flake.lock
+- Version comparison for Nix inputs
+
+## Usage
+
+### Configure Renovate
+
+Create a `renovate.json` configuration file:
+
+```json renovate.json
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:base"
+  ],
+  "nix": {
+    "enabled": true
+  }
+}
+```
+
+### Run locally
+
+Run Renovate on your repository:
+
+```bash
+renovate --token=$GITHUB_TOKEN your-org/your-repo
+```
+
+### Dry run
+
+Preview what Renovate would do:
+
+```bash
+renovate --dry-run --token=$GITHUB_TOKEN your-org/your-repo
+```
+
+## Nix flake support
+
+Renovate automatically detects and updates Nix flake inputs:
+
+```nix flake.nix
+inputs = {
+  nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+  flake-utils.url = "github:numtide/flake-utils";
+};
+```
+
+Renovate will:
+1. Monitor these inputs for updates
+2. Create PRs when new versions are available
+3. Update `flake.lock` automatically
+
+## GitHub Actions integration
+
+Run Renovate automatically with GitHub Actions:
+
+```yaml .github/workflows/renovate.yml
+name: Renovate
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Daily at midnight
+  workflow_dispatch:
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            extra-substituters = https://nix.trev.zip
+            extra-trusted-public-keys = trev:I39N/EsnHkvfmsbx8RUW+ia5dOzojTQNCTzKYij1chU=
+      
+      - name: Run Renovate
+        run: |
+          nix run github:spotdemo4/nur#renovate -- \
+            --token=${{ secrets.RENOVATE_TOKEN }} \
+            ${{ github.repository }}
+```
+
+## Advanced configuration
+
+### Automerge patch updates
+
+```json renovate.json
+{
+  "packageRules": [
+    {
+      "matchUpdateTypes": ["patch"],
+      "automerge": true
+    }
+  ]
+}
+```
+
+### Group related updates
+
+```json renovate.json
+{
+  "packageRules": [
+    {
+      "groupName": "nix-inputs",
+      "matchManagers": ["nix"]
+    }
+  ]
+}
+```
+
+### Schedule updates
+
+```json renovate.json
+{
+  "schedule": [
+    "before 5am on monday"
+  ],
+  "timezone": "America/New_York"
+}
+```
+
+### Pin Nix inputs to specific branches
+
+```json renovate.json
+{
+  "nix": {
+    "pinDigests": true
+  },
+  "packageRules": [
+    {
+      "matchManagers": ["nix"],
+      "matchPackageNames": ["nixpkgs"],
+      "allowedVersions": "/nixpkgs-unstable$/"
+    }
+  ]
+}
+```
+
+## Validation
+
+Validate your Renovate configuration:
+
+```bash
+renovate-config-validator
+```
+
+This checks for:
+- JSON syntax errors
+- Invalid configuration options
+- Deprecated settings
+
+## Common workflows
+
+### Update all dependencies
+
+```bash
+renovate --token=$GITHUB_TOKEN --autodiscover
+```
+
+### Update specific repository
+
+```bash
+renovate --token=$GITHUB_TOKEN owner/repo
+```
+
+### Self-hosted Renovate
+
+Run Renovate as a self-hosted service:
+
+```nix
+systemd.services.renovate = {
+  description = "Renovate Dependency Updates";
+  serviceConfig = {
+    Type = "oneshot";
+    ExecStart = "${pkgs.trev.renovate}/bin/renovate";
+    Environment = [
+      "RENOVATE_TOKEN_FILE=/run/secrets/renovate-token"
+      "RENOVATE_CONFIG_FILE=/etc/renovate/config.json"
+    ];
+  };
+};
+
+systemd.timers.renovate = {
+  wantedBy = [ "timers.target" ];
+  timerConfig = {
+    OnCalendar = "daily";
+    Persistent = true;
+  };
+};
+```
+
+## Supported platforms
+
+Renovate works with:
+- GitHub
+- GitLab
+- Bitbucket
+- Gitea
+- Azure DevOps
+
+## Supported languages
+
+- JavaScript/TypeScript (npm, yarn, pnpm)
+- Python (pip, poetry, pipenv)
+- Go (go modules)
+- Rust (cargo)
+- Ruby (bundler)
+- PHP (composer)
+- **Nix (flakes)** ← Enhanced with patches
+
+<Tip>
+Combine Renovate with `flake-release` to fully automate your dependency updates and release process.
+</Tip>
+
+<Warning>
+Always review Renovate PRs before merging, especially for major version updates that may include breaking changes.
+</Warning>
+
+## Links
+
+- [Renovate Documentation](https://docs.renovatebot.com/)
+- [GitHub Repository](https://github.com/renovatebot/renovate)
+- [Nix Flake Support PR](https://github.com/renovatebot/renovate/pull/40282)

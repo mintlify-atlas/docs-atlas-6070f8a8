@@ -1,0 +1,275 @@
+---
+title: Deno Bundlers
+description: Cross-compile JavaScript and TypeScript applications to standalone binaries
+---
+
+The Deno bundlers use `deno compile` to create self-contained executables for JavaScript and TypeScript applications across multiple platforms.
+
+## Available Bundlers
+
+Deno bundlers support 5 target platforms:
+
+| Bundler Name | Target Platform | Use Case |
+|--------------|-----------------|----------|
+| `deno-x86_64-linux` | x86_64 Linux | Servers, cloud deployments |
+| `deno-aarch64-linux` | ARM64 Linux | Raspberry Pi, ARM servers |
+| `deno-x86_64-darwin` | Intel macOS | Intel Mac distribution |
+| `deno-aarch64-darwin` | Apple Silicon macOS | M1/M2/M3 Mac distribution |
+| `deno-x86_64-windows` | x86_64 Windows | Windows desktop/server |
+
+<Note>
+Deno bundlers automatically append `.exe` extension to Windows binaries.
+</Note>
+
+## How It Works
+
+The Deno bundler:
+
+1. **Fetches denort** - Downloads the Deno runtime for the target platform
+2. **Finds entrypoint** - Reads `package.json` for the `main` field (defaults to `build/index.js`)
+3. **Compiles** - Uses `deno compile` with `--target` to create a standalone executable
+4. **Packages** - Places the binary in `$out/bin/` with proper naming
+
+### Implementation Details
+
+From `bundlers/deno/default.nix:50-76`:
+
+```nix
+installPhase = ''
+  runHook preInstall
+
+  DENO_DIR="\${TMPDIR:-/tmp}/deno"
+  export DENO_DIR
+
+  # install denort for given target
+  mkdir -p "$DENO_DIR/dl/release/v${pkgs.deno.version}"
+  cp ${denort."${target}"} "$DENO_DIR/dl/release/v${pkgs.deno.version}/denort-${target}.zip"
+
+  # find entrypoint
+  ENTRYPOINT=$(jq -r '.main' package.json)
+  if [ "$ENTRYPOINT" = "null" ] || [ -z "$ENTRYPOINT" ]; then
+    ENTRYPOINT="build/index.js"
+  fi
+
+  # compile
+  mkdir -p $out/bin
+  deno compile \
+    --no-check \
+    --allow-env \
+    --allow-net \
+    --target ${target} \
+    --output "$out/bin/${binName}" "$ENTRYPOINT"
+
+  runHook postInstall
+'';
+```
+
+## Basic Usage
+
+### Cross-Compile for Linux
+
+```bash
+nix bundle \
+  --bundler github:nurpkgs/nur-nix#deno-x86_64-linux \
+  .#my-deno-app
+```
+
+**Result**: Standalone Linux binary at `/nix/store/...-my-deno-app-x86_64-linux/bin/my-deno-app`
+
+### Cross-Compile for macOS Apple Silicon
+
+```bash
+nix bundle \
+  --bundler github:nurpkgs/nur-nix#deno-aarch64-darwin \
+  .#my-deno-app
+```
+
+**Result**: Standalone macOS binary at `/nix/store/...-my-deno-app-aarch64-darwin/bin/my-deno-app`
+
+### Cross-Compile for Windows
+
+```bash
+nix bundle \
+  --bundler github:nurpkgs/nur-nix#deno-x86_64-windows \
+  .#my-deno-app
+```
+
+**Result**: Windows executable at `/nix/store/...-my-deno-app-x86_64-windows/bin/my-deno-app.exe`
+
+## Multi-Platform Build
+
+Create binaries for all platforms in one script:
+
+```bash
+#!/usr/bin/env bash
+
+PACKAGE=".#my-deno-app"
+BASE_BUNDLER="github:nurpkgs/nur-nix#deno"
+
+SYSTEMS=(
+  "x86_64-linux"
+  "aarch64-linux"
+  "x86_64-darwin"
+  "aarch64-darwin"
+  "x86_64-windows"
+)
+
+for system in "${SYSTEMS[@]}"; do
+  echo "Building for $system..."
+  nix bundle --bundler "$BASE_BUNDLER-$system" "$PACKAGE"
+done
+```
+
+## Configuration
+
+### Entrypoint Detection
+
+The bundler automatically detects your application's entrypoint:
+
+1. **Reads** `package.json` for the `main` field
+2. **Falls back** to `build/index.js` if not specified
+
+**Example package.json**:
+
+```json
+{
+  "name": "my-deno-app",
+  "version": "1.0.0",
+  "main": "src/server.ts"
+}
+```
+
+### Deno Compile Flags
+
+The bundler uses these `deno compile` flags:
+
+- `--no-check` - Skip type checking (assumes already checked during build)
+- `--allow-env` - Allow environment variable access
+- `--allow-net` - Allow network access
+- `--target` - Specify target platform
+
+<Warning>
+If your app requires additional permissions (e.g., `--allow-read`, `--allow-write`), you'll need to customize the bundler.
+</Warning>
+
+## Advanced Usage
+
+### Custom Bundler Configuration
+
+Override the default bundler to add custom permissions:
+
+```nix
+{
+  description = "Custom Deno bundler";
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nur-nix.url = "github:nurpkgs/nur-nix";
+  };
+
+  outputs = { self, nixpkgs, nur-nix }:
+    let
+      system = "x86_64-linux";
+      pkgs = nixpkgs.legacyPackages.${system};
+      
+      customDenoBundler = drv: drv.overrideAttrs (prev: {
+        installPhase = builtins.replaceStrings
+          ["--allow-env"]
+          ["--allow-all"]
+          prev.installPhase;
+      });
+    in
+    {
+      bundlers.${system}.deno-custom = customDenoBundler;
+    };
+}
+```
+
+### Supported Deno Targets
+
+From `bundlers/deno/all.nix:4-25`, the bundler maps Nix systems to Deno targets:
+
+```nix
+targets = [
+  {
+    name = "x86_64-pc-windows-msvc";
+    normalized = "x86_64-windows";
+  }
+  {
+    name = "x86_64-apple-darwin";
+    normalized = "x86_64-darwin";
+  }
+  {
+    name = "aarch64-apple-darwin";
+    normalized = "aarch64-darwin";
+  }
+  {
+    name = "x86_64-unknown-linux-gnu";
+    normalized = "x86_64-linux";
+  }
+  {
+    name = "aarch64-unknown-linux-gnu";
+    normalized = "aarch64-linux";
+  }
+];
+```
+
+## Troubleshooting
+
+### Binary Size
+
+Deno binaries are typically 60-100 MB because they include the V8 runtime.
+
+<Tip>
+For smaller binaries, consider the Go bundlers if you can rewrite in Go, or use Docker bundlers for containerized deployments.
+</Tip>
+
+### Missing Entrypoint
+
+If the bundler can't find your entrypoint:
+
+```
+error: No such file or directory (os error 2)
+```
+
+**Solution**: Add a `main` field to `package.json` or ensure `build/index.js` exists.
+
+### Permission Errors
+
+If your app fails at runtime with permission errors:
+
+```
+error: Requires read access to "./data"
+```
+
+**Solution**: Customize the bundler to add required flags (e.g., `--allow-read`).
+
+## Performance
+
+### Build Time
+
+Deno compilation is fast:
+
+- **Small apps** (< 100 KB): ~2-5 seconds
+- **Medium apps** (< 1 MB): ~5-10 seconds
+- **Large apps** (> 1 MB): ~10-20 seconds
+
+### Runtime Performance
+
+Compiled Deno binaries have:
+
+- **Startup**: ~10-50ms overhead
+- **Execution**: Near-native V8 performance
+- **Memory**: Base ~20-30 MB (V8 runtime)
+
+## Related Topics
+
+<CardGroup cols={2}>
+  <Card title="Go Bundlers" icon="golang" href="/bundlers/go">
+    Smaller binaries with Go cross-compilation
+  </Card>
+  
+  <Card title="Docker Bundlers" icon="docker" href="/bundlers/docker">
+    Containerize Deno applications
+  </Card>
+</CardGroup>
